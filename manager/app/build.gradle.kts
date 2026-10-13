@@ -24,7 +24,7 @@ val managerVersionName = rootProject.extra["managerVersionName"] as String
 
 val isPrBuild = project.findProperty("IS_PR_BUILD")?.toString()?.toBoolean() ?: false
 val defaultManagerPackageName = if (isPrBuild) "me.weishu.kernelsu.pr" else "me.weishu.kernelsu"
-val defaultManagerName = if (isPrBuild) "KernelSU PR" else "KernelSU"
+val defaultManagerName = if (isPrBuild) "DikSU PR" else "DikSU"
 val managerPackageName = project.findProperty("KSU_PACKAGE_NAME")?.toString() ?: defaultManagerPackageName
 val managerName = project.findProperty("KSU_NAME")?.toString() ?: defaultManagerName
 
@@ -188,6 +188,11 @@ base {
 }
 
 dependencies {
+    // Renaming and re-signing the launcher on the device, so each install can carry a package
+    // name generated right there instead of one baked in at build time.
+    implementation(libs.apksig)
+    implementation(libs.apkzlib)
+
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.splashscreen)
 
@@ -212,7 +217,6 @@ dependencies {
     implementation(libs.dev.rikka.rikkax.parcelablelist)
 
     implementation(libs.kotlinx.coroutines.core)
-    implementation(libs.kotlinx.serialization.json)
 
     implementation(libs.commonmark)
     implementation(libs.commonmark.ext.gfm.tables)
@@ -242,8 +246,6 @@ dependencies {
     implementation(libs.commons.compress)
     implementation(libs.xz)
     implementation(libs.protobuf.kotlin.lite)
-
-    testImplementation(libs.junit)
 }
 
 kotlin {
