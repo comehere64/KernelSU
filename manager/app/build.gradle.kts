@@ -43,7 +43,7 @@ apksign {
 
 protobuf {
     protoc {
-        artifact = libs.protobuf.protoc.get().toString()
+        path = "/data/data/com.termux/files/usr/bin/protoc"
     }
     generateProtoTasks {
         ofNonTest().forEach { task ->
@@ -73,38 +73,12 @@ android {
 
     buildTypes {
         debug {
-            externalNativeBuild {
-                cmake {
-                    arguments += listOf("-DCMAKE_CXX_FLAGS_DEBUG=-Og", "-DCMAKE_C_FLAGS_DEBUG=-Og")
-                }
-            }
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             vcsInfo.include = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            externalNativeBuild {
-                cmake {
-                    arguments += "-DDEBUG_SYMBOLS_PATH=${layout.buildDirectory.get().asFile.absolutePath}/symbols"
-                    arguments += "-DCMAKE_BUILD_TYPE=Release"
-
-                    val releaseFlags = listOf(
-                        "-flto", "-ffunction-sections", "-fdata-sections", "-Wl,--gc-sections",
-                        "-fno-unwind-tables", "-fno-asynchronous-unwind-tables", "-Wl,--exclude-libs,ALL"
-                    )
-                    val configFlags = listOf("-Oz", "-DNDEBUG").joinToString(" ")
-
-                    cppFlags += releaseFlags
-                    cFlags += releaseFlags
-
-                    arguments += listOf(
-                        "-DCMAKE_CXX_FLAGS_RELEASE=$configFlags",
-                        "-DCMAKE_C_FLAGS_RELEASE=$configFlags",
-                        "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--gc-sections -Wl,--exclude-libs,ALL -Wl,--icf=all -s -Wl,--hash-style=sysv -Wl,-z,norelro"
-                    )
-                }
-            }
         }
     }
 
@@ -126,11 +100,6 @@ android {
         }
     }
 
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/CMakeLists.txt")
-        }
-    }
 
     dependenciesInfo {
         includeInApk = false
@@ -147,7 +116,6 @@ android {
             }
     }
     buildToolsVersion = androidBuildToolsVersion
-    ndkVersion = androidCompileNdkVersion
 
     defaultConfig {
         minSdk = androidMinSdkVersion
@@ -162,13 +130,6 @@ android {
         buildConfigField("String", "KSU_KEY_PASSWORD", "\"$keyPassword\"")
         resValue("string", "app_name", managerName)
 
-        externalNativeBuild {
-            cmake {
-                arguments += "-DANDROID_STL=none"
-                cFlags += baseCFlags + "-std=c2x"
-                cppFlags += baseCppFlags + "-std=c++2b"
-            }
-        }
 
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64", "riscv64")

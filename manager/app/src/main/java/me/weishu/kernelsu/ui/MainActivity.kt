@@ -571,7 +571,7 @@ fun MainScreen(
                         }
                     }
                 }
-                UiMode.Miuix -> Scaffold { _ ->
+                UiMode.Miuix, UiMode.MiuixStock -> Scaffold { _ ->
                     // The home's backdrop, re-read whenever the picture is replaced.
                     val wallpaperContext = LocalContext.current
                     val wallpaperVersion = HomeWallpaperStore.version

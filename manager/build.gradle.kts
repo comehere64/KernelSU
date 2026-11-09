@@ -15,14 +15,26 @@ extra["androidTargetCompatibility"] = JavaVersion.VERSION_21
 extra["managerVersionCode"] = getVersionCode()
 extra["managerVersionName"] = getVersionName()
 
+fun gitOutput(vararg args: String): String? = runCatching {
+    val pb = ProcessBuilder(*args)
+    pb.directory(rootDir)
+    pb.redirectErrorStream(false)
+    val proc = pb.start()
+    val text = proc.inputStream.bufferedReader().use { it.readText() }.trim()
+    proc.waitFor()
+    text.ifEmpty { null }
+}.getOrNull()
+
 fun getGitCommitCount(): Int {
-    val process = Runtime.getRuntime().exec(arrayOf("git", "rev-list", "--count", "HEAD"))
-    return process.inputStream.bufferedReader().use { it.readText().trim().toInt() }
+    // 在 Termux 里 daemon 的工作目录不是仓库，必须显式 -C。
+    val out = gitOutput("git", "-C", rootDir.absolutePath, "rev-list", "--count", "HEAD")
+        ?: return 0
+    return out.toIntOrNull() ?: 0
 }
 
 fun getGitDescribe(): String {
-    val process = Runtime.getRuntime().exec(arrayOf("git", "describe", "--tags", "--always"))
-    return process.inputStream.bufferedReader().use { it.readText().trim() }
+    return gitOutput("git", "-C", rootDir.absolutePath, "describe", "--tags", "--always")
+        ?: "dev"
 }
 
 fun getVersionCode(): Int {
