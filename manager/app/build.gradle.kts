@@ -1,6 +1,7 @@
 @file:Suppress("UnstableApiUsage")
 
 import com.google.protobuf.gradle.id
+import org.gradle.api.tasks.Copy
 
 plugins {
     alias(libs.plugins.agp.app)
@@ -23,10 +24,15 @@ val managerVersionCode = rootProject.extra["managerVersionCode"] as Int
 val managerVersionName = rootProject.extra["managerVersionName"] as String
 
 val isPrBuild = project.findProperty("IS_PR_BUILD")?.toString()?.toBoolean() ?: false
-val defaultManagerPackageName = if (isPrBuild) "me.weishu.kernelsu.pr" else "me.weishu.kernelsu"
+val defaultManagerPackageName = if (isPrBuild) "me.weishu.kernelsu.pr" else "me.diksu.kernelsu"
 val defaultManagerName = if (isPrBuild) "KernelSU PR" else "KernelSU"
 val managerPackageName = project.findProperty("KSU_PACKAGE_NAME")?.toString() ?: defaultManagerPackageName
 val managerName = project.findProperty("KSU_NAME")?.toString() ?: defaultManagerName
+val keystoreFileName = project.findProperty("KEYSTORE_FILE")?.toString() ?: "key.jks"
+val keystorePassword = project.findProperty("KEYSTORE_PASSWORD")?.toString().orEmpty()
+val keyAlias = project.findProperty("KEY_ALIAS")?.toString().orEmpty()
+val keyPassword = project.findProperty("KEY_PASSWORD")?.toString().orEmpty()
+val generatedKeystoreAssets = layout.buildDirectory.dir("generated/ksu-keystore-assets").get().asFile
 
 apksign {
     storeFileProperty = "KEYSTORE_FILE"
@@ -62,6 +68,8 @@ val baseCppFlags = baseCFlags + "-fno-rtti"
 
 android {
     namespace = "me.weishu.kernelsu"
+
+    sourceSets.getByName("main").assets.srcDir(generatedKeystoreAssets)
 
     buildTypes {
         debug {
@@ -149,6 +157,9 @@ android {
         applicationId = managerPackageName
 
         buildConfigField("boolean", "IS_PR_BUILD", isPrBuild.toString())
+        buildConfigField("String", "KSU_KEYSTORE_PASSWORD", "\"$keystorePassword\"")
+        buildConfigField("String", "KSU_KEY_ALIAS", "\"$keyAlias\"")
+        buildConfigField("String", "KSU_KEY_PASSWORD", "\"$keyPassword\"")
         resValue("string", "app_name", managerName)
 
         externalNativeBuild {
@@ -175,16 +186,30 @@ android {
     }
 }
 
+val copyKsuKeystore = tasks.register<Copy>("copyKsuKeystore") {
+    from(rootProject.file(keystoreFileName))
+    into(generatedKeystoreAssets)
+    rename { "kernelsu.jks" }
+}
+
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(copyKsuKeystore)
+}
+
 androidComponents {
     onVariants(selector().withBuildType("release")) {
         it.packaging.resources.excludes.addAll(listOf("META-INF/**", "kotlin/**", "**.bin"))
     }
 }
 
+// The launcher label carries zero-width padding on purpose — the hidden copy rewrites that very
+// string slot in place, so its length is the room a custom name has. A file name must not carry it:
+// the padding is invisible, so the artifact reads as `DikSU__v3.3.0-…` in every listing. It comes
+// off here, and only here.
+val archivePrefix = managerName.filterNot { it == '\u200b' || it.isWhitespace() }
+
 base {
-    archivesName.set(
-        "${managerName.replace(" ", "_")}_${managerVersionName}_${managerVersionCode}"
-    )
+    archivesName.set("${archivePrefix}_${managerVersionName}_${managerVersionCode}")
 }
 
 dependencies {
@@ -244,6 +269,10 @@ dependencies {
     implementation(libs.protobuf.kotlin.lite)
 
     testImplementation(libs.junit)
+    // Renaming and re-signing the Manager on the device, so an install can pick its own
+    // package name instead of the one baked in at build time.
+    implementation(libs.apksig)
+    implementation(libs.apkzlib)
 }
 
 kotlin {

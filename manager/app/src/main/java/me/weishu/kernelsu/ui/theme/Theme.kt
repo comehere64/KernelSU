@@ -51,6 +51,21 @@ data class AppSettings(
     val colorSpec: ColorSpec.SpecVersion,
 )
 
+/**
+ * The picture picks the mode, so there is nothing left for the colour-mode setting to say: with no
+ * picture of the reader's own the app is the light one with plain black text, and with a picture it
+ * is the dark one whose text the picture makes necessary. Whether the palette comes from Monet
+ * stays the reader's call.
+ */
+fun AppSettings.withWallpaperMode(hasPicture: Boolean): AppSettings = copy(
+    colorMode = when {
+        hasPicture && colorMode.isMonet -> ColorMode.MONET_DARK
+        hasPicture -> ColorMode.DARK
+        colorMode.isMonet -> ColorMode.MONET_LIGHT
+        else -> ColorMode.LIGHT
+    }
+)
+
 val PaletteStyle.supportsSpec2025: Boolean
     get() = this == PaletteStyle.TonalSpot ||
             this == PaletteStyle.Neutral ||
@@ -69,7 +84,7 @@ object ThemeController {
         val uiMode = repo.uiMode
         var colorModeValue = repo.themeMode
 
-        if (uiMode == "miuix") {
+        if (uiMode != "material") {
             val miuixMonet = repo.miuixMonet
             val colorMode = ColorMode.fromValue(colorModeValue)
             colorModeValue = if (!miuixMonet && colorMode.isMonet) {
@@ -108,7 +123,7 @@ fun KernelSUTheme(
 ) {
 
     when (uiMode) {
-        UiMode.Miuix -> MiuixKernelSUTheme(
+        UiMode.Miuix, UiMode.MiuixStock -> MiuixKernelSUTheme(
             appSettings = appSettings,
             content = content
         )

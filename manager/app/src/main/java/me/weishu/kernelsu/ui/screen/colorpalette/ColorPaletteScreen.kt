@@ -41,6 +41,14 @@ fun ColorPaletteScreen() {
     )
     val actions = ColorPaletteScreenActions(
         onBack = dropUnlessResumed { navigator.pop() },
+        onSetUiModeIndex = { index ->
+            val mode = when (index) {
+                0 -> UiMode.Miuix
+                1 -> UiMode.MiuixStock
+                else -> UiMode.Material
+            }
+            viewModel.setUiMode(mode.value)
+        },
         onSetThemeMode = viewModel::setThemeMode,
         onSetMiuixMonet = viewModel::setMiuixMonet,
         onSetKeyColor = viewModel::setKeyColor,
@@ -64,6 +72,7 @@ fun ColorPaletteScreen() {
 
     when (LocalUiMode.current) {
         UiMode.Miuix -> ColorPaletteScreenMiuix(state, actions)
+        UiMode.MiuixStock -> ColorPaletteScreenMiuixStock(state, actions)
         UiMode.Material -> ColorPaletteScreenMaterial(state, actions)
     }
 }

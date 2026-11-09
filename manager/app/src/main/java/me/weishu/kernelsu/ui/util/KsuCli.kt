@@ -27,7 +27,6 @@ import me.weishu.kernelsu.data.registry.RegistryDownloadStore
 import me.weishu.kernelsu.data.registry.copyForInstall
 import me.weishu.kernelsu.ksuApp
 import okhttp3.OkHttpClient
-import org.json.JSONArray
 import java.io.File
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -41,7 +40,7 @@ import java.util.zip.ZipFile
  */
 private const val TAG = "KsuCli"
 
-private fun getKsuDaemonPath(): String {
+internal fun getKsuDaemonPath(): String {
     return ksuApp.applicationInfo.nativeLibraryDir + File.separator + "libksud.so"
 }
 
@@ -147,14 +146,6 @@ fun listModules(): String {
     val out = shell.newJob()
         .add("${getKsuDaemonPath()} module list").to(ArrayList(), null).exec().out
     return out.joinToString("\n").ifBlank { "[]" }
-}
-
-fun getModuleCount(): Int {
-    val result = listModules()
-    runCatching {
-        val array = JSONArray(result)
-        return array.length()
-    }.getOrElse { return 0 }
 }
 
 fun getSuperuserCount(): Int {
@@ -331,7 +322,8 @@ fun restoreBoot(
 fun uninstallPermanently(
     onStdout: (String) -> Unit, onStderr: (String) -> Unit
 ): FlashResult {
-    val result = flashWithIO("${getKsuDaemonPath()} uninstall --package-name ${BuildConfig.APPLICATION_ID}", onStdout, onStderr)
+    // The Manager can be running under a name of its own, so ask the app what it is called.
+    val result = flashWithIO("${getKsuDaemonPath()} uninstall --package-name ${ksuApp.packageName}", onStdout, onStderr)
     return FlashResult(result)
 }
 
@@ -707,4 +699,46 @@ fun launchApp(packageName: String, userId: Int? = null) {
 fun restartApp(packageName: String, userId: Int? = null) {
     forceStopApp(packageName, userId)
     launchApp(packageName, userId)
+}
+
+/**
+ * The disguise switch the web UI owns: `/data/adb/ksu/hide_manager`.
+ *
+ * Read through su because /data/adb is root-only. Every screen that asks whether this app is the
+ * manager has to consult it, or the disguise only covers part of the app.
+ */
+fun isManagerHidden(): Boolean = runCatching {
+    com.topjohnwu.superuser.ShellUtils.fastCmd(
+        getRootShell(),
+        "test -f /data/adb/ksu/hide_manager && echo 1",
+    ).contains("1")
+}.getOrDefault(false)
+
+/**
+ * Drops the disguise switch, whatever state the app is in.
+ *
+ * The home screen's not-installed card calls this after five taps in a row: with the disguise on
+ * there is no settings page to switch it off from, and the calculator that opens the web UI may
+ * already be uninstalled — this is the way back that does not depend on either.
+ */
+fun clearManagerHidden() {
+    runCatching { ShellUtils.fastCmd(getRootShell(), "rm -f /data/adb/ksu/hide_manager") }
+}
+
+/**
+ * Whether [typed] is the code the calculator was given.
+ *
+ * Same file the calculator watches, so there is one secret to remember rather than two. The
+ * fallback matches the code the calculator is built with, for the case where the file was never
+ * written — without it, a device that never set a code could not be un-disguised at all.
+ */
+fun matchesTriggerCode(typed: String): Boolean {
+    val clean = typed.filter { it.isDigit() }
+    if (clean.isEmpty()) {
+        return false
+    }
+    val stored = runCatching {
+        ShellUtils.fastCmd(getRootShell(), "cat /data/adb/ksu/webui.trigger 2>/dev/null")
+    }.getOrDefault("").filter { it.isDigit() }
+    return clean == stored.ifEmpty { "1234" }
 }

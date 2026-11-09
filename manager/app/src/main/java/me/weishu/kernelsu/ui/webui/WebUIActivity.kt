@@ -33,7 +33,7 @@ import me.weishu.kernelsu.ui.theme.ThemeController
 import top.yukonga.miuix.kmp.basic.InfiniteProgressIndicator
 
 @SuppressLint("SetJavaScriptEnabled")
-class WebUIActivity : ComponentActivity() {
+open class WebUIActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
 
         enableEdgeToEdge()
@@ -118,7 +118,7 @@ private fun MainContent(activity: ComponentActivity, onFinish: () -> Unit) {
 @Composable
 private fun LoadingContent() {
     when (LocalUiMode.current) {
-        UiMode.Miuix -> {
+        UiMode.Miuix, UiMode.MiuixStock -> {
             Box(
                 modifier = Modifier.fillMaxSize(),
                 contentAlignment = Alignment.Center

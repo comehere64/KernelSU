@@ -144,8 +144,10 @@ class SettingsViewModel(
         val oldMode = repo.uiMode
         val currentThemeMode = repo.themeMode
 
-        val newThemeMode = when (oldMode) {
-            "material" if mode == "miuix" -> {
+        val enteringMiuix = oldMode == "material" && mode != "material"
+        val leavingMiuix = oldMode != "material" && mode == "material"
+        val newThemeMode = when {
+            enteringMiuix -> {
                 val colorMode = ColorMode.fromValue(currentThemeMode)
                 val baseMode = if (colorMode == ColorMode.DARK_AMOLED) 2 else currentThemeMode
                 if (repo.miuixMonet && !colorMode.isMonet) {
@@ -155,7 +157,7 @@ class SettingsViewModel(
                 } else baseMode
             }
 
-            "miuix" if mode == "material" -> {
+            leavingMiuix -> {
                 val colorMode = ColorMode.fromValue(currentThemeMode)
                 if (colorMode.isMonet) {
                     colorMode.toNonMonetMode()
@@ -177,7 +179,7 @@ class SettingsViewModel(
 
     fun setThemeMode(mode: Int) {
         val currentUiMode = repo.uiMode
-        val effectiveMode = if (currentUiMode == "miuix" && _uiState.value.miuixMonet) {
+        val effectiveMode = if (currentUiMode != "material" && _uiState.value.miuixMonet) {
             mode + 3
         } else {
             mode

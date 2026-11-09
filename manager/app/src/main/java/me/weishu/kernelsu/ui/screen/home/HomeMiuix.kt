@@ -1,4 +1,6 @@
 package me.weishu.kernelsu.ui.screen.home
+import android.content.Context
+
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
@@ -6,6 +8,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.IntrinsicSize
@@ -24,10 +28,12 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.DeveloperBoard
@@ -40,32 +46,53 @@ import androidx.compose.material.icons.filled.VolunteerActivism
 import androidx.compose.material.icons.rounded.CheckCircleOutline
 import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.UriHandler
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import me.weishu.kernelsu.KernelVersion
 import me.weishu.kernelsu.Natives
 import me.weishu.kernelsu.R
+import me.weishu.kernelsu.ui.PanelMetrics
 import me.weishu.kernelsu.ui.component.WarningLevel
 import me.weishu.kernelsu.ui.component.dialog.rememberConfirmDialog
 import me.weishu.kernelsu.ui.component.miuix.WarningCard
-import me.weishu.kernelsu.ui.component.rebootlistpopup.RebootListPopupMiuix
 import me.weishu.kernelsu.ui.component.statustag.StatusTag
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
-import me.weishu.kernelsu.ui.theme.isInDarkTheme
-import me.weishu.kernelsu.ui.util.BlurredBar
 import me.weishu.kernelsu.ui.util.module.LatestVersionInfo
+import me.weishu.kernelsu.ui.util.HomeWallpaperStore
+import me.weishu.kernelsu.ui.util.rememberWallpaperSet
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -77,16 +104,30 @@ import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.ScrollBehavior
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
-import top.yukonga.miuix.kmp.basic.TopAppBar
-import top.yukonga.miuix.kmp.blur.LayerBackdrop
 import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
-import top.yukonga.miuix.kmp.theme.MiuixTheme.isDynamicColor
 import top.yukonga.miuix.kmp.utils.PressFeedbackType
 import top.yukonga.miuix.kmp.utils.overScrollVertical
 import top.yukonga.miuix.kmp.utils.scrollEndHaptic
+
+/**
+ * Live alignment nudges for the frosted pane, dialled from the theme settings sliders and kept
+ * across restarts. Read during composition so dragging a slider retriggers the pane's layout.
+ */
+object GlassNudge {
+    private const val PREF = "glass_nudge"
+    val x = mutableFloatStateOf(15f)
+    val y = mutableFloatStateOf(375f)
+
+    fun load(context: Context) {
+        val sp = context.getSharedPreferences(PREF, Context.MODE_PRIVATE)
+        x.floatValue = sp.getFloat("x", 15f)
+        y.floatValue = sp.getFloat("y", 375f)
+    }
+
+}
 
 @Composable
 fun HomePagerMiuix(
@@ -97,16 +138,7 @@ fun HomePagerMiuix(
     val scrollBehavior = MiuixScrollBehavior()
     val enableBlur = LocalEnableBlur.current
     val backdrop = rememberBlurBackdrop(enableBlur)
-    val blurActive = backdrop != null
-    val barColor = if (blurActive) Color.Transparent else colorScheme.surface
     Scaffold(
-        topBar = {
-            TopBar(
-                scrollBehavior = scrollBehavior,
-                backdrop = backdrop,
-                barColor = barColor,
-            )
-        },
         popupHost = { },
         contentWindowInsets = WindowInsets.systemBars.add(WindowInsets.displayCutout).only(WindowInsetsSides.Horizontal)
     ) { innerPadding ->
@@ -223,24 +255,6 @@ private fun UpdateCard(
 }
 
 @Composable
-private fun TopBar(
-    scrollBehavior: ScrollBehavior,
-    backdrop: LayerBackdrop?,
-    barColor: Color,
-) {
-    BlurredBar(backdrop) {
-        TopAppBar(
-            color = barColor,
-            title = stringResource(R.string.app_name),
-            actions = {
-                RebootListPopupMiuix()
-            },
-            scrollBehavior = scrollBehavior
-        )
-    }
-}
-
-@Composable
 private fun StatusCard(
     state: HomeUiState,
     actions: HomeActions,
@@ -263,30 +277,143 @@ private fun StatusCard(
                 }
                 val workingText = "${stringResource(id = R.string.home_working)}$workingState"
 
+                // The status card may carry a picture of its own; re-read when it is replaced.
+                val statusContext = LocalContext.current
+                val statusVersion = HomeWallpaperStore.version
+                val statusImage = remember(statusContext, statusVersion) {
+                    HomeWallpaperStore.load(HomeWallpaperStore.statusFile(statusContext))
+                }
+                val homeWallpaper = remember(statusContext, statusVersion) {
+                    HomeWallpaperStore.load(HomeWallpaperStore.file(statusContext))
+                }
+                // With no picture of its own, the card over a wallpaper is frosted glass: the
+                // backdrop itself, aligned to the window and blurred under the same dimming, so
+                // the card is a pane of the page rather than a colour sampled out of it.
+                val glassBackdrop = statusImage == null && homeWallpaper != null
+                // A video backdrop has no still to sample, but the card must not fall back to
+                // the theme gradient over a photograph — a smoked pane suits the moving picture.
+                val movingBackdrop = statusImage == null &&
+                    remember(statusContext, statusVersion) {
+                        HomeWallpaperStore.videoFile(statusContext).exists()
+                    }
+                var cardWindowPos by remember { mutableStateOf(Offset.Zero) }
+                // Over a picture (its own or the glass) the text is the same bright tint the info
+                // card uses; on the theme's gradient it is plain black.
+                val statusTitleColor = when {
+                    statusImage != null || glassBackdrop || movingBackdrop ->
+                        lerp(colorScheme.primary, Color.White, 0.65f)
+                    else -> Color.Black
+                }
+                val statusSubColor = when {
+                    statusImage != null || glassBackdrop || movingBackdrop ->
+                        lerp(colorScheme.primary, Color.White, 0.8f)
+                    else -> Color.Black
+                }
+                // A solid base under everything: the glass covers it when there is a wallpaper,
+                // and without one this theme gradient is the card's own face.
+                val cardBrush = if (movingBackdrop || glassBackdrop) {
+                    Brush.verticalGradient(
+                        listOf(
+                            Color.Black.copy(alpha = 0.30f),
+                            Color.Black.copy(alpha = 0.18f),
+                        )
+                    )
+                } else {
+                    Brush.verticalGradient(
+                        listOf(
+                            colorScheme.primaryContainer,
+                            colorScheme.secondaryContainer,
+                        )
+                    )
+                }
+
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(IntrinsicSize.Min),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.defaultColors(
-                            color = when {
-                                isDynamicColor -> colorScheme.secondaryContainer
-                                isInDarkTheme() -> Color(0xFF1A3825)
-                                else -> Color(0xFFDFFAE4)
+                    // The shadow is what keeps the card's edge; the face is either the theme's
+                    // gradient or the page's own picture showing through.
+                    val cardShape = RoundedCornerShape(16.dp)
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onGloballyPositioned { coords ->
+                                cardWindowPos = coords.positionInWindow()
                             }
-                        ),
-                        onClick = {
-                            if (!state.isLateLoadMode) {
-                                actions.onInstallClick()
-                            }
-                        },
-                        showIndication = !state.isLateLoadMode,
-                        pressFeedbackType = PressFeedbackType.Tilt
+                            .shadow(12.dp, cardShape, clip = true)
+                            .background(
+                                brush = if (glassBackdrop) {
+                                    SolidColor(Color.Transparent)
+                                } else cardBrush,
+                                shape = cardShape,
+                            )
                     ) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.defaultColors(
+                                color = Color.Transparent
+                            ),
+                            onClick = {
+                                if (!state.isLateLoadMode) {
+                                    actions.onInstallClick()
+                                }
+                            },
+                            showIndication = !state.isLateLoadMode,
+                            pressFeedbackType = PressFeedbackType.Tilt
+                        ) {
                         Box {
+                            if (glassBackdrop) {
+                                val panelSize = PanelMetrics.size.value
+                                val nudgeX = GlassNudge.x.floatValue
+                                val nudgeY = GlassNudge.y.floatValue
+                                val panelPos = PanelMetrics.pos.value
+                                // Read in composition so scrolling retriggers layout.
+                                val cardPos = cardWindowPos
+                                if (panelSize != IntSize.Zero) {
+                                    val paneDensity = LocalDensity.current
+                                    Box(
+                                        modifier = Modifier
+                                            .matchParentSize()
+                                            .clip(cardShape)
+                                    ) {
+                                        Image(
+                                            bitmap = homeWallpaper,
+                                            contentDescription = null,
+                                            contentScale = ContentScale.Crop,
+                                            modifier = Modifier
+                                                .requiredSize(
+                                                    with(paneDensity) { (panelSize.width + 96).toDp() },
+                                                    with(paneDensity) { panelSize.height.toDp() },
+                                                )
+                                                .blur(16.dp)
+                                                .offset {
+                                                    IntOffset(
+                                                        panelPos.x.roundToInt() - cardPos.x.roundToInt()
+                                                            - 48
+                                                            + with(paneDensity) { nudgeX.dp.toPx() }.roundToInt(),
+                                                        panelPos.y.roundToInt() - cardPos.y.roundToInt()
+                                                            + with(paneDensity) { nudgeY.dp.toPx() }.roundToInt(),
+                                                    )
+                                                },
+                                        )
+                                        Box(
+                                            modifier = Modifier
+                                                .matchParentSize()
+                                                .background(Color.Black.copy(alpha = 0.28f)),
+                                        )
+                                    }
+                                }
+                            }
+                            if (statusImage != null) {
+                                Image(
+                                    bitmap = statusImage,
+                                    contentDescription = null,
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.matchParentSize(),
+                                )
+                            }
                             Box(
                                 modifier = Modifier
                                     .fillMaxSize()
@@ -296,11 +423,7 @@ private fun StatusCard(
                                 Icon(
                                     modifier = Modifier.size(110.dp),
                                     imageVector = Icons.Rounded.CheckCircleOutline,
-                                    tint = if (isDynamicColor) {
-                                        colorScheme.primary.copy(alpha = 0.8f)
-                                    } else {
-                                        Color(0xFF36D167)
-                                    },
+                                    tint = colorScheme.primary.copy(alpha = 0.8f),
                                     contentDescription = null
                                 )
                             }
@@ -315,6 +438,7 @@ private fun StatusCard(
                                         text = workingMode,
                                         fontSize = 16.sp,
                                         fontWeight = FontWeight.Medium,
+                                        color = statusSubColor,
                                     )
                                 }
                             }
@@ -329,6 +453,7 @@ private fun StatusCard(
                                         text = workingText,
                                         fontSize = 22.sp,
                                         fontWeight = FontWeight.SemiBold,
+                                        color = statusTitleColor,
                                     )
                                     Spacer(Modifier.height(1.dp))
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -339,31 +464,21 @@ private fun StatusCard(
                                             ),
                                             modifier = Modifier.weight(1f, fill = false),
                                             fontSize = 15.sp,
+                                            color = statusSubColor,
                                         )
                                         if (state.showCustomLkmBadge) {
                                             Spacer(Modifier.width(8.dp))
                                             StatusTag(
                                                 label = stringResource(R.string.home_lkm_custom),
-                                                contentColor = if (isDynamicColor) {
-                                                    colorScheme.onTertiaryContainer
-                                                } else if (isInDarkTheme()) {
-                                                    Color(0xFFB8E8C5)
-                                                } else {
-                                                    Color(0xFF164A29)
-                                                },
-                                                backgroundColor = if (isDynamicColor) {
-                                                    colorScheme.tertiaryContainer
-                                                } else if (isInDarkTheme()) {
-                                                    Color(0xFF315D3E)
-                                                } else {
-                                                    Color(0xFFB8E8C5)
-                                                },
+                                                contentColor = colorScheme.onTertiaryContainer,
+                                                backgroundColor = colorScheme.tertiaryContainer,
                                             )
                                         }
                                     }
                                 }
                             }
                         }
+                    }
                     }
                 }
             }
@@ -440,7 +555,15 @@ private fun SupportLinks(
 ) {
     val learnMoreUrl = stringResource(R.string.home_learn_kernelsu_url)
 
-    Card(modifier = modifier) {
+    // The cards' own colour follows the panel's opacity: at 0 they are nothing but their text,
+    // sitting on the picture behind them. The status card above keeps its colour on purpose 鈥?it is
+    // the one card that has to stay legible whatever the backdrop is.
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.defaultColors(
+            color = colorScheme.surface.copy(alpha = HomeWallpaperStore.PANEL_FILL)
+        ),
+    ) {
         ArrowPreference(
             title = stringResource(R.string.home_support_title),
             summary = stringResource(R.string.home_support_content),
@@ -475,6 +598,8 @@ private fun InfoCard(
     systemInfo: SystemInfo,
     modifier: Modifier = Modifier,
 ) {
+    val wallpaperSet = rememberWallpaperSet()
+
     @Composable
     fun InfoText(
         icon: ImageVector,
@@ -501,12 +626,18 @@ private fun InfoCard(
                     text = title,
                     fontSize = MiuixTheme.textStyles.headline1.fontSize,
                     fontWeight = FontWeight.Medium,
-                    color = colorScheme.onSurface,
+                    // As bright as white gets while still carrying the theme's hue: over a picture
+                    // the page's own dark text vanished, and plainly white text reads as a different
+                    // app. Only the text moves 鈥?the components keep the scheme they had.
+                    // With no picture the page is the plain light one, and there the text is black.
+                    color = if (wallpaperSet) lerp(colorScheme.primary, Color.White, 0.65f) else Color.Black,
                 )
                 Text(
                     text = content,
                     fontSize = MiuixTheme.textStyles.body2.fontSize,
-                    color = colorScheme.onSurfaceVariantSummary,
+                    color = if (wallpaperSet) {
+                        lerp(colorScheme.primary, Color.White, 0.8f)
+                    } else Color.Black,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
@@ -531,7 +662,12 @@ private fun InfoCard(
         modifier = modifier,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.defaultColors(
+                color = colorScheme.surface.copy(alpha = HomeWallpaperStore.PANEL_FILL)
+            ),
+        ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 InfoText(
                     icon = Icons.Filled.Tag,
@@ -556,7 +692,12 @@ private fun InfoCard(
                 )
             }
         }
-        Card(modifier = Modifier.fillMaxWidth()) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.defaultColors(
+                color = colorScheme.surface.copy(alpha = HomeWallpaperStore.PANEL_FILL)
+            ),
+        ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 InfoText(
                     icon = Icons.Filled.Security,

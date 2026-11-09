@@ -5,12 +5,10 @@ import android.os.Build
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -35,20 +33,22 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.MenuOpen
 import androidx.compose.material.icons.rounded.AspectRatio
-import androidx.compose.material.icons.rounded.BlurOn
-import androidx.compose.material.icons.rounded.CallToAction
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Description
 import androidx.compose.material.icons.rounded.DesignServices
 import androidx.compose.material.icons.rounded.Pin
 import androidx.compose.material.icons.rounded.Style
 import androidx.compose.material.icons.rounded.Wallpaper
-import androidx.compose.material.icons.rounded.WaterDrop
+import androidx.compose.material.icons.rounded.DisplaySettings
+import me.weishu.kernelsu.ui.UiMode
 import androidx.compose.material.icons.rounded.Swipe
 import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.platform.LocalContext
+import me.weishu.kernelsu.ui.BackgroundDim
+import me.weishu.kernelsu.ui.MainActivity
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,6 +76,8 @@ import me.weishu.kernelsu.ui.component.miuix.ScaleDialog
 import me.weishu.kernelsu.ui.theme.LocalEnableBlur
 import me.weishu.kernelsu.ui.theme.keyColorOptions
 import me.weishu.kernelsu.ui.util.BlurredBar
+import me.weishu.kernelsu.ui.util.HomeWallpaperPreference
+import me.weishu.kernelsu.ui.util.rememberWallpaperSet
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Card
@@ -85,7 +87,6 @@ import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.Slider
 import top.yukonga.miuix.kmp.basic.SliderDefaults
-import top.yukonga.miuix.kmp.basic.TabRow
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.blur.layerBackdrop
@@ -109,8 +110,9 @@ fun ColorPaletteScreenMiuix(
     val blurActive = backdrop != null
     val barColor = if (blurActive) Color.Transparent else colorScheme.surface
     val uiState = state.uiState
-    val currentColorMode = state.currentColorMode
-    val isDark = currentColorMode.isDark || currentColorMode.isSystem && isSystemInDarkTheme()
+    // The picture decides whether the app is the light one or the dark one, so the preview shows
+    // that rather than a mode the reader could pick.
+    val isDark = rememberWallpaperSet()
 
     Scaffold(
         topBar = {
@@ -166,24 +168,74 @@ fun ColorPaletteScreenMiuix(
                     )
                     Spacer(modifier = Modifier.height(72.dp))
 
-                    val themeItems = listOf(
-                        stringResource(id = R.string.settings_theme_mode_system),
-                        stringResource(id = R.string.settings_theme_mode_light),
-                        stringResource(id = R.string.settings_theme_mode_dark),
-                    )
-                    TabRow(
-                        tabs = themeItems,
-                        selectedTabIndex = (if (uiState.themeMode >= 3) uiState.themeMode - 3 else uiState.themeMode).coerceIn(0, 2),
-                        onTabSelected = { index ->
-                            actions.onSetThemeMode(index)
-                        },
-                    )
+                    // The three picture rows sit on their own, above the effect switches: they are
+                    // what the rest of the page's look hangs off — the mode follows whether one is
+                    // set — so they lead rather than trail the list.
+                    Card(
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        HomeWallpaperPreference()
+                    }
 
                     Card(
                         modifier = Modifier
                             .padding(top = 12.dp)
                             .fillMaxWidth(),
                     ) {
+                        val glassContext = LocalContext.current
+                        var dimValue by remember { mutableFloatStateOf(BackgroundDim.value.floatValue) }
+                        BasicComponent(
+                            title = "背景暗度",
+                            summary = "首页图片/视频背景的压暗程度",
+                            endActions = {
+                                Text(
+                                    text = "${(dimValue * 100).toInt()}%",
+                                    color = colorScheme.onSurfaceVariantActions,
+                                )
+                            },
+                            bottomAction = {
+                                Slider(
+                                    value = dimValue,
+                                    onValueChange = {
+                                        dimValue = it
+                                        BackgroundDim.value.floatValue = it
+                                    },
+                                    onValueChangeFinished = {
+                                        BackgroundDim.save(glassContext, dimValue)
+                                    },
+                                    valueRange = 0f..0.7f,
+                                    showKeyPoints = true,
+                                    keyPoints = listOf(0f, 0.175f, 0.35f, 0.525f, 0.7f),
+                                    magnetThreshold = 0f,
+                                    hapticEffect = SliderDefaults.SliderHapticEffect.Step,
+                                )
+                            },
+                        )
+                    }
+
+                    Card(
+                        modifier = Modifier
+                            .padding(top = 12.dp)
+                            .fillMaxWidth(),
+                    ) {
+                        // The interface style is also a theme choice, so it can be changed here.
+                        OverlayDropdownPreference(
+                            title = stringResource(id = R.string.settings_ui_mode),
+                            summary = stringResource(id = R.string.settings_ui_mode_summary),
+                            items = UiMode.entries.map { it.displayName },
+                            startAction = {
+                                Icon(
+                                    Icons.Rounded.DisplaySettings,
+                                    modifier = Modifier.padding(end = 6.dp),
+                                    contentDescription = stringResource(id = R.string.settings_ui_mode),
+                                    tint = colorScheme.onBackground
+                                )
+                            },
+                            selectedIndex = UiMode.entries.indexOfFirst { it.value == uiState.uiMode }.coerceAtLeast(0),
+                            onSelectedIndexChange = actions.onSetUiModeIndex,
+                        )
                         SwitchPreference(
                             title = stringResource(id = R.string.settings_monet),
                             startAction = {
@@ -290,58 +342,6 @@ fun ColorPaletteScreenMiuix(
                             .padding(top = 12.dp)
                             .fillMaxWidth(),
                     ) {
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            SwitchPreference(
-                                title = stringResource(id = R.string.settings_enable_blur),
-                                summary = stringResource(id = R.string.settings_enable_blur_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.BlurOn,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_enable_blur),
-                                        tint = colorScheme.onBackground
-                                    )
-                                },
-                                checked = uiState.enableBlur,
-                                onCheckedChange = {
-                                    actions.onSetEnableBlur(it)
-                                }
-                            )
-                        }
-                        SwitchPreference(
-                            title = stringResource(id = R.string.settings_floating_bottom_bar),
-                            summary = stringResource(id = R.string.settings_floating_bottom_bar_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.CallToAction,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = stringResource(id = R.string.settings_floating_bottom_bar),
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            checked = uiState.enableFloatingBottomBar,
-                            onCheckedChange = {
-                                actions.onSetEnableFloatingBottomBar(it)
-                            }
-                        )
-                        AnimatedVisibility(visible = uiState.enableFloatingBottomBar && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            SwitchPreference(
-                                title = stringResource(id = R.string.settings_enable_glass),
-                                summary = stringResource(id = R.string.settings_enable_glass_summary),
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.WaterDrop,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = stringResource(id = R.string.settings_enable_glass),
-                                        tint = colorScheme.onBackground
-                                    )
-                                },
-                                checked = uiState.enableFloatingBottomBarBlur,
-                                onCheckedChange = {
-                                    actions.onSetEnableFloatingBottomBarBlur(it)
-                                }
-                            )
-                        }
                         SwitchPreference(
                             title = stringResource(id = R.string.settings_navigation_badge),
                             summary = stringResource(id = R.string.settings_navigation_badge_summary),
@@ -504,6 +504,8 @@ fun ColorPaletteScreenMiuix(
                             },
                         )
                     }
+
+
                 }
                 item {
                     Spacer(
