@@ -1,0 +1,26 @@
+name: ksu-ko
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ko:
+    name: kernelsu.ko for KMI
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/ylarod/ddk-min:android15-6.6-20260828
+      options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: |
+          git config --global --add safe.directory '*'
+          cd kernel
+          CONFIG_KSU=m CC=clang make KSU_PACKAGE_NAME=me.weishu.kernelsu KSU_EXPECTED_SIZE=0x0333 KSU_EXPECTED_HASH=5ae128f95ed2d187ed75f4cb8057bb25e01fbb5348ab4b995ba7102565316d5c
+          echo "--- 产物 ---"
+          ls -l kernelsu.ko
+          tr -c '[:print:]' '\n' < kernelsu.ko | grep -m1 vermagic || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kernelsu-ko-android15-6.6
+          path: kernel/kernelsu.ko
