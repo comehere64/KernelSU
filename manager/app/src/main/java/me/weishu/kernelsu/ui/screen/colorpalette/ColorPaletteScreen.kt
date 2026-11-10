@@ -71,7 +71,7 @@ fun ColorPaletteScreen() {
     )
 
     when (LocalUiMode.current) {
-        UiMode.Miuix -> ColorPaletteScreenMiuix(state, actions)
+        UiMode.Miuix -> ColorPaletteScreenMiuixStock(state, actions)  // 美化版已移除，归到原版
         UiMode.MiuixStock -> ColorPaletteScreenMiuixStock(state, actions)
         UiMode.Material -> ColorPaletteScreenMaterial(state, actions)
     }

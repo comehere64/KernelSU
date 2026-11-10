@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="screen-orientation" content="portrait">
 <meta name="x5-orientation" content="portrait">
-<title>DikSU</title>
+<title>KernelSU</title>
 <style>
 :root {
   --keyboard-inset: 0px;
@@ -502,7 +502,7 @@ body.modal-open { overflow: hidden; }
   </div>
   <div class="topbar">
     <div class="topbar-inner">
-      <div class="topbar-title" id="topbarTitle">DikSU</div>
+      <div class="topbar-title" id="topbarTitle">KernelSU</div>
       <div class="topbar-actions">
         <button class="icon-btn" id="themeToggle" title="切换主题">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -659,8 +659,6 @@ body.modal-open { overflow: hidden; }
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           </div>
           <div class="pref-content">
-            <div class="pref-title">加入 QQ 群</div>
-            <div class="pref-subtitle">864553367 · 反馈与讨论</div>
           </div>
           <div class="pref-arrow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></div>
         </div>
@@ -903,7 +901,7 @@ let appList = [];
 let moduleList = [];
 let systemInfoCache = null;
 
-const pageTitles = { home: 'DikSU', superuser: '超级用户', modules: '模块', settings: '设置', files: '文件管理', keymint: 'keyMint 配置' };
+const pageTitles = { home: 'KernelSU', superuser: '超级用户', modules: '模块', settings: '设置', files: '文件管理', keymint: 'keyMint 配置' };
 
 async function api(path, options = {}) {
   try {
@@ -1569,7 +1567,7 @@ async function loadHome() {
     `}).join('');
 
     container.innerHTML = `
-      <div class="card card-clickable" onclick="showToast('DikSU 工作正常')">
+      <div class="card card-clickable" onclick="showToast('KernelSU 工作正常')">
         <div class="status-card">
           <div class="status-label">工作状态</div>
           <div class="status-value" style="display:flex;align-items:center;gap:8px;">
@@ -1596,7 +1594,7 @@ async function loadHome() {
       <div class="section-title">功能开关</div>
       <div class="card">${featuresHtml}</div>
     `;
-    document.getElementById('versionInfo').textContent = 'DikSU v' + info.version;
+    document.getElementById('versionInfo').textContent = 'KernelSU v' + info.version;
   } catch (e) {
     container.innerHTML = `
       <div class="card">
@@ -1614,18 +1612,7 @@ async function loadHome() {
   }
 }
 
-const QQ_GROUP = '864553367';
-const QQ_GROUP_URL = 'https://qun.qq.com/universal-share/share?ac=1&authKey=VWOzex%2BbEYTrURLkfTZyfS7LZQVN65O1SplmHJ1phxt%2F0seLNoA0A%2FNhIw3%2Bgvdp&busi_data=eyJncm91cENvZGUiOiI4NjQ1NTMzNjciLCJ0b2tlbiI6IkJpcjN4bVpPUUFZL2hQYyszcGVMc0xCYXU2ejVxNEVuaktiNE5IUWg1TExaWDEzdGhQZFRnWEJ6RVEwcVBsY2siLCJ1aW4iOiIyODQ3NzM4MjExIn0%3D&data=bz0Wl8LJJsGUdqgyiiDROlBDr-oTEIOg5zCPJOG-PU4cs2dYvaB6v3m23jsjCQ4K3SRIPZSgQBNO8F0-aA0vUQ&svctype=4&tempid=h5_group_info';
 
-function joinQqGroup() {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(QQ_GROUP)
-      .then(() => showToast('群号 ' + QQ_GROUP + ' 已复制'))
-      .catch(() => {});
-  }
-
-  if (!window.open(QQ_GROUP_URL, '_blank')) location.href = QQ_GROUP_URL;
-}
 
 async function runHmaConfig(scene) {
   const extra = scene

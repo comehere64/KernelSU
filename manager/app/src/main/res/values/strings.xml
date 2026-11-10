@@ -206,7 +206,9 @@
     <string name="select_file_tip">%1$s partition image is recommended</string>
     <string name="select_kmi">Select KMI</string>
     <string name="settings_uninstall">Uninstall</string>
-    <string name="settings_hide_manager">Random package name</string>
+        <string name="settings_hide_manager_state">Hide manager status</string>
+    <string name="settings_hide_manager_state_summary">Shows "not installed" on the home screen; kernel and Web UI keep working</string>
+<string name="settings_hide_manager">Random package name</string>
     <string name="settings_hide_manager_summary">Install the Manager again under a name made up on this device</string>
     <string name="hide_manager_running">Repacking the Manager…</string>
     <string name="hide_manager_done">Reinstalling as %s in the background; the new app opens by itself</string>

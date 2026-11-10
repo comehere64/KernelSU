@@ -831,13 +831,13 @@ fn get_features() -> Result<Vec<FeatureState>> {
             continue;
         }
         match ksucalls::get_feature(*id) {
-            Ok((value, enabled)) => {
+            Ok(state) => {
                 result.push(FeatureState {
                     id: *id,
                     name: name.to_string(),
                     description: desc.to_string(),
-                    value,
-                    enabled,
+                    value: state.value,
+                    enabled: state.supported,
                 });
             }
             Err(_) => {
@@ -3470,16 +3470,9 @@ pub fn bind_webui(explicit: Option<u16>) -> Result<(TcpListener, u16)> {
         let bound = listener.local_addr()?.port();
         return Ok((listener, bound));
     }
+    // 每次启动都重新随机：即使上一轮的端口仍在 webui.port 里，也不复用（规格 7.1）。
+    // 服务已在运行时由上层直接复用现有 listener，不会走到这里（规格 7.4）。
 
-    if let Some(port) = load_persisted_port() {
-        match TcpListener::bind(("127.0.0.1", port)) {
-            Ok(listener) => {
-                log::info!("Web UI reusing persisted port {port}");
-                return Ok((listener, port));
-            }
-            Err(e) => log::warn!("persisted Web UI port {port} unusable ({e}), picking a new one"),
-        }
-    }
 
     let span = u32::from(PORT_RANGE_END - PORT_RANGE_START) + 1;
     for _ in 0..PORT_BIND_ATTEMPTS {
@@ -3627,15 +3620,40 @@ pub fn serve_for_browser(_packages: &[String], _port: Option<u16>) -> Result<()>
 
 #[cfg(target_os = "android")]
 fn bind_auto_port(explicit: Option<u16>) -> Result<(TcpListener, u16)> {
-    let Some(port) = explicit.or_else(load_persisted_port) else {
-        let listener = TcpListener::bind(("127.0.0.1", 0))?;
-        let port = listener.local_addr()?.port();
+    // 显式指定端口时只试这一个（失败直接报错，不静默换端口）。
+    if let Some(port) = explicit {
+        let listener = TcpListener::bind(("127.0.0.1", port))
+            .map_err(|e| anyhow::anyhow!("端口 {port} 已被占用（可能已经有一个在跑）：{e}"))?;
         persist_port(port);
         log::info!("Web UI: pinned to port {port}");
         return Ok((listener, port));
-    };
-    let listener = TcpListener::bind(("127.0.0.1", port))
-        .map_err(|e| anyhow::anyhow!("端口 {port} 已被占用（可能已经有一个在跑）：{e}"))?;
+    }
+
+    // 每次启动都在 [PORT_RANGE_START, PORT_RANGE_END] 里重新随机，不复用上次的端口（规格 7.1）。
+    let span = u32::from(PORT_RANGE_END - PORT_RANGE_START) + 1;
+    let mut last_err: Option<std::io::Error> = None;
+    for _ in 0..PORT_BIND_ATTEMPTS {
+        let candidate = PORT_RANGE_START + (u32::from(random_u16()) % span) as u16;
+        match TcpListener::bind(("127.0.0.1", candidate)) {
+            Ok(listener) => {
+                persist_port(candidate);
+                log::info!("Web UI picked random port {candidate}");
+                return Ok((listener, candidate));
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+
+    // 连续失败兜底：交给 OS 分配，并明确告警（规格 7.3）。
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| {
+        anyhow::anyhow!(
+            "{PORT_BIND_ATTEMPTS} 次随机端口全部占用且系统分配失败: {e}（上次错误: {}）",
+            last_err.map_or_else(|| "无".to_string(), |e| e.to_string())
+        )
+    })?;
+    let port = listener.local_addr()?.port();
+    persist_port(port);
+    log::warn!("no free random port in {PORT_RANGE_START}..={PORT_RANGE_END}, OS assigned {port}");
     Ok((listener, port))
 }
 

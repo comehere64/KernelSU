@@ -165,7 +165,7 @@ androidComponents {
 
 // The launcher label carries zero-width padding on purpose — the hidden copy rewrites that very
 // string slot in place, so its length is the room a custom name has. A file name must not carry it:
-// the padding is invisible, so the artifact reads as `DikSU__v3.3.0-…` in every listing. It comes
+// the padding is invisible, so the artifact reads with a doubled underscore in every listing. It comes
 // off here, and only here.
 val archivePrefix = managerName.filterNot { it == '\u200b' || it.isWhitespace() }
 

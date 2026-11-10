@@ -146,7 +146,7 @@ fun SideRail(
     modifier: Modifier = Modifier,
 ) {
     when (LocalUiMode.current) {
-        UiMode.Miuix -> NavigationRailMiuix(navigationBadge, backdrop, modifier)
+        UiMode.Miuix -> NavigationRailMiuixStock(navigationBadge, modifier)  // 美化版已移除，归到原版
         UiMode.MiuixStock -> NavigationRailMiuixStock(navigationBadge, modifier)
         UiMode.Material -> NavigationRailMaterial(navigationBadge, modifier)
     }

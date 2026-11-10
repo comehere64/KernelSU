@@ -59,11 +59,8 @@ fun SettingPager(
         onSetCheckModuleUpdate = viewModel::setCheckModuleUpdate,
         onOpenTheme = { navigator.push(Route.ColorPalette) },
         onSetUiModeIndex = { index ->
-            val mode = when (index) {
-                0 -> UiMode.Miuix
-                1 -> UiMode.MiuixStock
-                else -> UiMode.Material
-            }
+            // 只有两项：Material 3 / miuix(原版)
+            val mode = UiMode.selectable.getOrElse(index) { UiMode.Material }
             viewModel.setUiMode(mode.value)
         },
         onOpenProfileTemplate = { navigator.push(Route.AppProfileTemplate) },
@@ -80,6 +77,7 @@ fun SettingPager(
         onSetAutoJailbreak = viewModel::setAutoJailbreak,
         onSetUseSoftReboot = viewModel::setUseSoftReboot,
         onOpenAbout = { navigator.push(Route.About) },
+        onRefresh = { viewModel.refresh() },
         onHideManager = {
             canRestore = ManagerHider.canRestore(context)
             hideDialogShown = true
@@ -123,7 +121,7 @@ fun SettingPager(
     }
 
     when (LocalUiMode.current) {
-        UiMode.Miuix -> SettingPagerMiuix(uiState, actions, bottomInnerPadding)
+        UiMode.Miuix -> SettingPagerMiuixStock(uiState, actions, bottomInnerPadding)  // 美化版已移除，归到原版
         UiMode.MiuixStock -> SettingPagerMiuixStock(uiState, actions, bottomInnerPadding)
         UiMode.Material -> SettingPagerMaterial(uiState, actions, bottomInnerPadding)
     }

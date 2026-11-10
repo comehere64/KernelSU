@@ -14,3 +14,7 @@ __pycache__
 
 # ddk build output (kernelsu-*.ko)
 /out
+
+# 签名私钥（本地保留，勿提交）
+key.jks
+manager/app/src/main/assets/calculator-signing.jks

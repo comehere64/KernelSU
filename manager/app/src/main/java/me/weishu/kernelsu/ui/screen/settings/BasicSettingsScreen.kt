@@ -1,6 +1,7 @@
 package me.weishu.kernelsu.ui.screen.settings
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -25,6 +26,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -53,6 +55,16 @@ import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.OverlayDropdownPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
+import androidx.compose.material.icons.rounded.Calculate
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import me.weishu.kernelsu.ui.component.KsuIsValid
 
 /**
  * The switches that used to sit in the middle of Settings, moved to a page of their own so the main
@@ -253,6 +265,7 @@ private fun BasicSettingsMaterial(
                     }
                 },
             )
+
         }
     }
 }
@@ -331,6 +344,7 @@ private fun BasicSettingsMiuix(
                 Card(modifier = Modifier.padding(top = 12.dp)) {
                     rows.drop(ROWS_WITH_SU_COMPAT).forEach { MiuixSwitchRow(it) }
                 }
+
             }
         }
     }

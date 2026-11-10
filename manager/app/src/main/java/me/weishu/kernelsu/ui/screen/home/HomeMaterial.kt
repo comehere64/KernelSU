@@ -5,6 +5,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -399,9 +400,11 @@ private fun InfoCard(
         label: String,
         content: String,
         modifier: Modifier = Modifier,
+        onClick: (() -> Unit)? = null,
     ) {
         SegmentedListItem(
             modifier = modifier,
+            onClick = onClick,
             headlineContent = { Text(text = label, style = MaterialTheme.typography.bodyLarge) },
             leadingContent = { Icon(imageVector = icon, contentDescription = label) },
             supportingContent = {
@@ -434,11 +437,69 @@ private fun InfoCard(
     ) {
         SegmentedColumn(modifier = Modifier.fillMaxWidth()) {
             item {
+                // 五击版本号 = 解除隐藏管理器状态的唯一入口（与 miuix 原版行为一致）。
+                val recoveryContext = androidx.compose.ui.platform.LocalContext.current
+                val recoveryTaps = androidx.compose.runtime.remember {
+                    androidx.compose.runtime.mutableStateOf(0)
+                }
+                val askPassword = androidx.compose.runtime.remember {
+                    androidx.compose.runtime.mutableStateOf(false)
+                }
+                val passwordEntry = androidx.compose.runtime.remember {
+                    androidx.compose.runtime.mutableStateOf("")
+                }
                 InfoCardItem(
                     icon = Icons.Filled.Tag,
                     label = stringResource(R.string.home_manager_version),
                     content = systemInfo.managerVersion,
+                    onClick = {
+                        recoveryTaps.value++
+                        if (recoveryTaps.value >= 5) {
+                            recoveryTaps.value = 0
+                            askPassword.value = true
+                            passwordEntry.value = ""
+                        }
+                    },
                 )
+                if (askPassword.value) {
+                    androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { askPassword.value = false },
+                        title = { androidx.compose.material3.Text("密码") },
+                        text = {
+                            androidx.compose.material3.OutlinedTextField(
+                                value = passwordEntry.value,
+                                onValueChange = { passwordEntry.value = it },
+                                singleLine = true,
+                                label = { androidx.compose.material3.Text("输入密码") },
+                            )
+                        },
+                        confirmButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                val entry = passwordEntry.value
+                                askPassword.value = false
+                                if (me.weishu.kernelsu.ui.util.matchesTriggerCode(entry)) {
+                                    me.weishu.kernelsu.ui.util.clearManagerHidden()
+                                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                                        android.widget.Toast.makeText(
+                                            recoveryContext, "已解除",
+                                            android.widget.Toast.LENGTH_SHORT,
+                                        ).show()
+                                    }
+                                }
+                                // 密码错误：静默，不提示（规格 5.2）
+                            }) {
+                                androidx.compose.material3.Text("确定")
+                            }
+                        },
+                        dismissButton = {
+                            androidx.compose.material3.TextButton(onClick = {
+                                askPassword.value = false
+                            }) {
+                                androidx.compose.material3.Text("取消")
+                            }
+                        },
+                    )
+                }
             }
             item {
                 InfoCardItem(

@@ -725,6 +725,16 @@ fun clearManagerHidden() {
     runCatching { ShellUtils.fastCmd(getRootShell(), "rm -f /data/adb/ksu/hide_manager") }
 }
 
+/** 打开隐藏管理器状态：只写标记文件，不改任何权限判定与内核状态。 */
+fun setManagerHidden(hidden: Boolean) {
+    val cmd = if (hidden) {
+        "mkdir -p /data/adb/ksu && : > /data/adb/ksu/hide_manager"
+    } else {
+        "rm -f /data/adb/ksu/hide_manager"
+    }
+    runCatching { ShellUtils.fastCmd(getRootShell(), cmd) }
+}
+
 /**
  * Whether [typed] is the code the calculator was given.
  *

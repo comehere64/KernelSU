@@ -38,10 +38,16 @@ fun getGitDescribe(): String {
 }
 
 fun getVersionCode(): Int {
+    // CI 对齐用：-POVERRIDE_VERSION_CODE=32680 可强制指定，便于和官方 release 版本号一致
+    val override = project.findProperty("OVERRIDE_VERSION_CODE")?.toString()?.toIntOrNull()
+    if (override != null) return override
     val commitCount = getGitCommitCount()
     return 30000 + commitCount
 }
 
 fun getVersionName(): String {
+    // CI 对齐用：-POVERRIDE_VERSION_NAME=v3.3.1
+    val override = project.findProperty("OVERRIDE_VERSION_NAME")?.toString()
+    if (!override.isNullOrBlank()) return override
     return getGitDescribe()
 }

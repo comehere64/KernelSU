@@ -80,13 +80,8 @@ fun HomePager(
     )
 
     when (LocalUiMode.current) {
-        UiMode.Miuix, UiMode.MiuixStock -> HomePagerMiuix(
-            state = uiState,
-            actions = actions,
-            bottomInnerPadding = bottomInnerPadding,
-        )
-
-        UiMode.MiuixStock -> HomePagerMiuixStock(
+        // 美化版已移除：两种 miuix 变体都走原版首页（5 击恢复隐藏也只在原版里）
+        UiMode.Miuix, UiMode.MiuixStock -> HomePagerMiuixStock(
             state = uiState,
             actions = actions,
             bottomInnerPadding = bottomInnerPadding,

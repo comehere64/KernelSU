@@ -31,7 +31,7 @@ sealed interface HideAppListPhase {
 }
 
 /**
- * The two variants DikSU offers, and what came back from the one that ran.
+ * The two variants offered, and what came back from the one that ran.
  *
  * They are the same script with a different environment, so they are one row in the settings list
  * and this dialog rather than two rows that would read alike.

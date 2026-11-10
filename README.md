@@ -1,11 +1,11 @@
-# DikSU
+# KernelSU
 
 
 ---
 
 ## 一、网页端（WebUI）：原版没有的完整管理界面
 
-原版 KernelSU 的网页端只用来承载模块自己的 WebUI 页面；DikSU 在 `ksud` 里直接内建了一个 HTTP 服务，把整套管理界面做进了浏览器，不依赖管理器 App 也能完成绝大部分操作。
+原版 KernelSU 的网页端只用来承载模块自己的 WebUI 页面；KernelSU 在 `ksud` 里直接内建了一个 HTTP 服务，把整套管理界面做进了浏览器，不依赖管理器 App 也能完成绝大部分操作。
 
 代码全部位于 `userspace/ksud/src/webui*.rs` 与 `userspace/ksud/assets/web/`，前端约 4900 行、服务端约 8900 行，对外暴露 60+ 个 `/api/*` 接口。
 
@@ -67,7 +67,7 @@
 ## 二、管理器 APK 端：原版没有的功能
 
 ### 1. 随机包名（隐藏管理器）
-KernelSU 答复 Magisk 的 "Hide the App"。因为包名是烘焙进签名 APK 的，管理器无法像 Magisk 的 stub 那样直接换一个 APK，DikSU 选择**在设备上重写它自己**：
+KernelSU 答复 Magisk 的 "Hide the App"。因为包名是烘焙进签名 APK 的，管理器无法像 Magisk 的 stub 那样直接换一个 APK，KernelSU 选择**在设备上重写它自己**：
 
 - 重写 `AndroidManifest.xml`（UTF-16LE，5 处：包名、动态广播权限、两个 authority、WebUI 的 taskAffinity）
 - 重写 `resources.arsc`（UTF-16LE，包 chunk 的定宽名字字段）

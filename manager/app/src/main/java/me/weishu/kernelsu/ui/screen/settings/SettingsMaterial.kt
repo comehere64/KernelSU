@@ -16,6 +16,8 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.Adb
 import androidx.compose.material.icons.filled.AdminPanelSettings
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Calculate
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -30,6 +32,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.SystemUpdateAlt
 import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.SnackbarHostState
@@ -38,6 +41,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.TopAppBarScrollBehavior
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -128,8 +132,8 @@ fun SettingPagerMaterial(
                             icon = Icons.Filled.DisplaySettings,
                             title = stringResource(id = R.string.settings_ui_mode),
                             summary = stringResource(id = R.string.settings_ui_mode_summary),
-                            items = UiMode.entries.map { it.displayName },
-                            selectedIndex = UiMode.entries.indexOfFirst { it.value == uiState.uiMode }.coerceAtLeast(0),
+                            items = UiMode.selectable.map { it.displayName },
+                            selectedIndex = UiMode.selectable.indexOfFirst { it.value == uiState.uiMode }.coerceAtLeast(0),
                             onItemSelected = actions.onSetUiModeIndex
                         )
                     }
@@ -148,6 +152,37 @@ fun SettingPagerMaterial(
                         )
                     }
                 }
+            )
+
+            // 扩展功能入口：基础设置 / 其他功能 / 随机包名
+            SegmentedColumn(
+                modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 13.dp),
+                content = listOf(
+                    {
+                        val basic = stringResource(id = R.string.settings_basic)
+                        SegmentedListItem(
+                            onClick = actions.onOpenBasicSettings,
+                            headlineContent = { Text(basic) },
+                            supportingContent = { Text(stringResource(id = R.string.settings_basic_summary)) },
+                            leadingContent = { Icon(Icons.Filled.AdminPanelSettings, basic) },
+                            trailingContent = {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
+                            }
+                        )
+                    },
+                    {
+                        val hideManager = stringResource(id = R.string.settings_hide_manager)
+                        SegmentedListItem(
+                            onClick = actions.onHideManager,
+                            headlineContent = { Text(hideManager) },
+                            supportingContent = { Text(stringResource(id = R.string.settings_hide_manager_summary)) },
+                            leadingContent = { Icon(Icons.Filled.VisibilityOff, hideManager) },
+                            trailingContent = {
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
+                            }
+                        )
+                    }
+                )
             )
 
             val profileTemplate = stringResource(id = R.string.settings_profile_template)
@@ -169,6 +204,24 @@ fun SettingPagerMaterial(
                         )
                     }
                 )
+            }
+
+            // 计算器启动器（两套风格共用同一份实现）
+            KsuIsValid {
+                val calc = rememberCalculatorLauncherState()
+                SegmentedColumn(
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 13.dp),
+                    content = listOf {
+                        SegmentedSwitchItem(
+                            icon = Icons.Filled.Calculate,
+                            title = CALC_TITLE,
+                            summary = if (calc.installed) CALC_SUMMARY_ON else CALC_SUMMARY_OFF,
+                            checked = calc.installed,
+                            onCheckedChange = calc.onToggle,
+                        )
+                    },
+                )
+                CalculatorCodeDialog(calc)
             }
 
             KsuIsValid {

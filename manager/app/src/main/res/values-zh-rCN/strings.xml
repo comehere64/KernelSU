@@ -189,7 +189,9 @@
     <string name="select_file_tip">建议选择 %1$s 分区镜像</string>
     <string name="select_kmi">选择 KMI</string>
     <string name="settings_uninstall">卸载</string>
-    <string name="settings_hide_manager">随机包名</string>
+        <string name="settings_hide_manager_state">隐藏管理器状态</string>
+    <string name="settings_hide_manager_state_summary">开启后首页显示「未安装」，内核与网页端不受影响</string>
+<string name="settings_hide_manager">随机包名</string>
     <string name="settings_hide_manager_summary">用本机现取的包名重新安装管理器</string>
     <string name="hide_manager_running">正在重新打包管理器…</string>
     <string name="hide_manager_done">正在后台重装为 %s，完成后会自动打开新应用</string>

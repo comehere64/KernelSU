@@ -1,23 +1,22 @@
 **English** | [Español](README_ES.md) | [简体中文](README_CN.md) | [繁體中文](README_TW.md) | [日本語](README_JP.md) | [한국어](README_KR.md) | [Polski](README_PL.md) | [Português (Brasil)](README_PT-BR.md) | [Türkçe](README_TR.md) | [Русский](README_RU.md) | [Tiếng Việt](README_VI.md) | [Indonesia](README_ID.md) | [עברית](README_IW.md) | [हिंदी](README_IN.md) | [Italiano](README_IT.md)
 
-# DikSU
+# KernelSU
 
-- GitHub: https://github.com/wuhudiao/DikSU
+- GitHub: https://github.com/tiann/KernelSU
 - Telegram: https://t.me/DIKSU66
-- QQ group: `864553367`
 
 ---
 
 ## 1. WebUI: a complete management interface the original does not have
 
-The original KernelSU WebUI only hosts the modules' own WebUI pages. DikSU builds an HTTP service directly into `ksud`, putting the whole management interface into the browser, so most operations can be done without the Manager app.
+The original KernelSU WebUI only hosts the modules' own WebUI pages. KernelSU builds an HTTP service directly into `ksud`, putting the whole management interface into the browser, so most operations can be done without the Manager app.
 
 All the code lives in `userspace/ksud/src/webui*.rs` and `userspace/ksud/assets/web/`: about 4900 lines of front end and 8900 lines of server, exposing 60+ `/api/*` endpoints.
 
 ### 1. Home and status
 - System info on one screen: kernel version, device model, system fingerprint, SELinux status (Enforcing highlighted), Seccomp status (filtered / strict / disabled / unsupported)
 - Feature switches toggled right in the page, with kernel capability detection; unsupported items are greyed out
-- Built-in update check pointing at DikSU's own Releases (the original points at KernelSU)
+- Built-in update check pointing at KernelSU's own Releases (the original points at KernelSU)
 - One tap to join the QQ group
 
 ### 2. Superuser
@@ -74,7 +73,7 @@ The WebUI is not opened from the Manager; it hides inside a calculator:
 ## 2. Manager APK: features the original does not have
 
 ### 1. Random package name (hide the Manager)
-KernelSU's answer to Magisk's "Hide the App". Because the package name is baked into the signed APK, the Manager cannot simply ship a second APK the way Magisk's stub does, so DikSU **rewrites the Manager on the device**:
+KernelSU's answer to Magisk's "Hide the App". Because the package name is baked into the signed APK, the Manager cannot simply ship a second APK the way Magisk's stub does, so KernelSU **rewrites the Manager on the device**:
 
 - Rewrites `AndroidManifest.xml` (UTF-16LE, 5 places: the package, the dynamic receiver permission, the two authorities, and WebUI's taskAffinity)
 - Rewrites `resources.arsc` (UTF-16LE, the package chunk's fixed-width name field)

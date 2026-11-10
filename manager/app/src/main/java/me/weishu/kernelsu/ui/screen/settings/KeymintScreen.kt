@@ -99,7 +99,7 @@ import java.net.URL
 import kotlin.math.roundToLong
 
 /**
- * The Oh My Keymint panel that came over from DikSU, redone with this Manager's own components.
+ * The Oh My Keymint panel that came over from the upstream fork, redone with this Manager's own components.
  *
  * Same content as that panel — daemons, the property fix, which apps are routed to OMK, the log
  * levels, the keybox and the two restart switches — but drawn with Miuix/Material instead of a

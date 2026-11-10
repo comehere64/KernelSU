@@ -85,4 +85,5 @@ data class SettingsScreenActions(
     val onSetUseSoftReboot: (Boolean) -> Unit,
     val onOpenAbout: () -> Unit,
     val onHideManager: () -> Unit,
+    val onRefresh: () -> Unit = {},
 )

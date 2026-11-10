@@ -144,7 +144,7 @@ fun SettingPagerMiuix(
                         OverlayDropdownPreference(
                             title = stringResource(id = R.string.settings_ui_mode),
                             summary = stringResource(id = R.string.settings_ui_mode_summary),
-                            items = UiMode.entries.map { it.displayName },
+                            items = UiMode.selectable.map { it.displayName },
                             startAction = {
                                 Icon(
                                     Icons.Rounded.DisplaySettings,
@@ -153,7 +153,7 @@ fun SettingPagerMiuix(
                                     tint = colorScheme.onBackground
                                 )
                             },
-                            selectedIndex = UiMode.entries.indexOfFirst { it.value == uiState.uiMode }.coerceAtLeast(0),
+                            selectedIndex = UiMode.selectable.indexOfFirst { it.value == uiState.uiMode }.coerceAtLeast(0),
                             onSelectedIndexChange = actions.onSetUiModeIndex
                         )
                         ArrowPreference(

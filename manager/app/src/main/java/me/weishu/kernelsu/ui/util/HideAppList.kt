@@ -4,10 +4,10 @@ import android.util.Base64
 import me.weishu.kernelsu.ksuApp
 
 /**
- * The one-tap Hide My Applist config, ported from DikSU's `webui.rs` (`run_hma_config`).
+ * The one-tap Hide My Applist config, ported from the upstream fork's `webui.rs` (`run_hma_config`).
  *
- * DikSU runs this behind its own web server; here it is a plain root shell call. The script itself
- * is DikSU's own copy (`assets/hma-oss-config.sh`), so the file to keep an eye on when that one
+ * The upstream fork runs this behind its own web server; here it is a plain root shell call. The script itself
+ * is the upstream fork's own copy (`assets/hma-oss-config.sh`), so the file to keep an eye on when that one
  * changes is theirs — the two changes made for the Manager are that its package name goes into
  * every app's extra-hide list, and that the reload step only has to start HMA before pressing back,
  * because it re-reads the config on launch.

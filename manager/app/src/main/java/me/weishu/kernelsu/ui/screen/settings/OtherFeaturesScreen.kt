@@ -48,7 +48,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme.colorScheme
 
-/** The two extras that came over from DikSU: the one-tap Hide My Applist config, and the keyMint panel. */
+/** The two extra panels that came over from the upstream fork: the one-tap Hide My Applist config, and the keyMint panel. */
 @Composable
 fun OtherFeaturesScreen() {
     val navigator = LocalNavigator.current

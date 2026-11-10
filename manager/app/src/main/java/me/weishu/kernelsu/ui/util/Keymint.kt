@@ -44,9 +44,9 @@ data class KeymintApp(
 )
 
 /**
- * The Oh My Keymint controls, ported from DikSU's `webui_keymint.rs`.
+ * The Oh My Keymint controls, ported from the upstream fork's `webui_keymint.rs`.
  *
- * DikSU runs these behind its own web server; here they are plain calls into the module's files
+ * The upstream fork runs these behind its own web server; here they are plain calls into the module's files
  * through a root shell. Everything is blocking — call it off the main thread.
  */
 object Keymint {
@@ -182,7 +182,7 @@ object Keymint {
                 trimmed.substring(key.length).trimStart().startsWith('=')
         }
 
-    // --- scoop：DikSU 的 parse_scoop / set_scoop -----------------------------
+    // --- scoop：上游 fork 的 parse_scoop / set_scoop -----------------------------
 
     private fun parseScoop(text: String): List<String> {
         val range = findScoopArray(text) ?: return emptyList()
