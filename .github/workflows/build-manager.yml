@@ -97,8 +97,11 @@ jobs:
     needs: generate-key
     uses: ./.github/workflows/build-lkm.yml
     with:
-      expected_size: ${{ needs.generate-key.outputs.expected_size || '' }}
-      expected_hash: ${{ needs.generate-key.outputs.expected_hash || '' }}
+      # 非 PR 构建：把 manager 的包名与签名常量烧进 ko，
+      # 否则内核认的是官方证书，自签 APK 装上去拿不到 root（is_manager: 0）
+      package_name: ${{ needs.generate-key.outputs.expected_size == '' && 'me.weishu.kernelsu' || '' }}
+      expected_size: ${{ needs.generate-key.outputs.expected_size || '0x0333' }}
+      expected_hash: ${{ needs.generate-key.outputs.expected_hash || '5ae128f95ed2d187ed75f4cb8057bb25e01fbb5348ab4b995ba7102565316d5c' }}
     secrets: inherit
 
   build-ksuinit:
