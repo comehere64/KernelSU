@@ -45,7 +45,9 @@ protobuf {
     protoc {
         // 本地 Termux 用预装的 protoc（Android 上跑不了 Maven 的 x86_64 二进制）；
         // CI/常规机器上不存在该路径，回落到 Maven 依赖里的 protoc 可执行文件。
-        val localProtoc = file("/data/data/com.termux/files/usr/bin/protoc")
+        // 注意：Termux 里 protoc 是软链（protoc -> protoc-36.2.0），
+        // File.length() 对软链返回链接自身长度（13），必须跟到真实文件再判断。
+        val localProtoc = file("/data/data/com.termux/files/usr/bin/protoc").canonicalFile
         if (localProtoc.exists() && localProtoc.length() > 1024) {
             path = localProtoc.absolutePath
         } else {
