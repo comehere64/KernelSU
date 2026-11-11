@@ -84,6 +84,5 @@ data class SettingsScreenActions(
     val onSetAutoJailbreak: (Boolean) -> Unit,
     val onSetUseSoftReboot: (Boolean) -> Unit,
     val onOpenAbout: () -> Unit,
-    val onHideManager: () -> Unit,
     val onRefresh: () -> Unit = {},
 )

@@ -106,7 +106,6 @@ import me.weishu.kernelsu.ui.theme.LocalModuleDescriptionMaxLines
 import me.weishu.kernelsu.ui.theme.withWallpaperMode
 import me.weishu.kernelsu.ui.util.getSuperuserCount
 import me.weishu.kernelsu.ui.util.install
-import me.weishu.kernelsu.ui.util.ManagerHider
 import me.weishu.kernelsu.ui.util.rememberBlurBackdrop
 import me.weishu.kernelsu.ui.screen.home.GlassNudge
 import me.weishu.kernelsu.ui.util.rememberContentReady
@@ -186,29 +185,6 @@ open class MainActivity : ComponentActivity() {
 
         val isManager = Natives.isManager
         if (isManager && Natives.kernelUAPIVersion == Natives.managerUAPIVersion) install()
-
-        // The hide flow grants its own copy root so that copy can finish the job. Once this app IS
-        // the manager that grant is redundant, so drop it rather than leave an entry behind in the
-        // Superuser list.
-        if (isManager) {
-            val self = packageName
-            lifecycleScope.launch(Dispatchers.IO) { ManagerHider.revokeTemporaryGrant(self) }
-        }
-
-        // A renamed copy is launched with the rest of the hide to do: drop the package that still
-        // holds the manager seat, then reinstall itself, which is the package event the kernel
-        // searches on. It needs the root the old install granted it before launching this.
-        if (savedInstanceState == null) {
-            intent?.getStringExtra(ManagerHider.EXTRA_HIDDEN_FROM)?.let { previous ->
-                val staged = intent?.getStringExtra(ManagerHider.EXTRA_HIDDEN_APK).orEmpty()
-                if (previous.isNotEmpty() && staged.isNotEmpty()) {
-                    lifecycleScope.launch(Dispatchers.IO) {
-                        val original = intent?.getStringExtra(ManagerHider.EXTRA_HIDDEN_ORIGINAL)
-                        ManagerHider.finishHide(this@MainActivity, previous, staged, original)
-                    }
-                }
-            }
-        }
 
         if (savedInstanceState == null) intent?.let { intentChannel.trySend(it) }
 

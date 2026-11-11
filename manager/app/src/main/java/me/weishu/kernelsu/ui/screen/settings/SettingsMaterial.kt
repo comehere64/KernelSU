@@ -171,55 +171,36 @@ fun SettingPagerMaterial(
                         )
                     },
                     {
-                        val hideManager = stringResource(id = R.string.settings_hide_manager)
+                        val other = stringResource(id = R.string.settings_other)
                         SegmentedListItem(
-                            onClick = actions.onHideManager,
-                            headlineContent = { Text(hideManager) },
-                            supportingContent = { Text(stringResource(id = R.string.settings_hide_manager_summary)) },
-                            leadingContent = { Icon(Icons.Filled.VisibilityOff, hideManager) },
+                            onClick = actions.onOpenOtherFeatures,
+                            headlineContent = { Text(other) },
+                            supportingContent = { Text(stringResource(id = R.string.settings_other_summary)) },
+                            leadingContent = { Icon(Icons.Filled.Build, other) },
                             trailingContent = {
                                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null)
                             }
                         )
-                    }
+                    },
                 )
             )
-
-            val profileTemplate = stringResource(id = R.string.settings_profile_template)
-            KsuIsValid {
-                SegmentedColumn(
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 13.dp),
-                    content = listOf {
-                        SegmentedListItem(
-                            onClick = actions.onOpenProfileTemplate,
-                            headlineContent = { Text(profileTemplate) },
-                            supportingContent = { Text(stringResource(id = R.string.settings_profile_template_summary)) },
-                            leadingContent = { Icon(Icons.Filled.Description, profileTemplate) },
-                            trailingContent = {
-                                Icon(
-                                    Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                    null
-                                )
-                            }
-                        )
-                    }
-                )
-            }
 
             // 计算器启动器（两套风格共用同一份实现）
             KsuIsValid {
                 val calc = rememberCalculatorLauncherState()
                 SegmentedColumn(
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 13.dp),
-                    content = listOf {
-                        SegmentedSwitchItem(
-                            icon = Icons.Filled.Calculate,
-                            title = CALC_TITLE,
-                            summary = if (calc.installed) CALC_SUMMARY_ON else CALC_SUMMARY_OFF,
-                            checked = calc.installed,
-                            onCheckedChange = calc.onToggle,
-                        )
-                    },
+                    content = listOf(
+                        {
+                            SegmentedSwitchItem(
+                                icon = Icons.Filled.Calculate,
+                                title = CALC_TITLE,
+                                summary = if (calc.installed) CALC_SUMMARY_ON else CALC_SUMMARY_OFF,
+                                checked = calc.installed,
+                                onCheckedChange = calc.onToggle,
+                            )
+                        },
+                    ),
                 )
                 CalculatorCodeDialog(calc)
             }

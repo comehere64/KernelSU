@@ -190,27 +190,7 @@ fun SettingPagerMiuixStock(
                         )
                     }
 
-                    Card(
-                        modifier = Modifier
-                            .padding(top = 12.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        val hideManager = stringResource(id = R.string.settings_hide_manager)
-                        ArrowPreference(
-                            title = hideManager,
-                            summary = stringResource(id = R.string.settings_hide_manager_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.VisibilityOff,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = hideManager,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = actions.onHideManager,
-                        )
-                    }
-                    // 计算器启动器（两套风格共用同一份实现）
+                                        // 计算器启动器（两套风格共用同一份实现）
                     KsuIsValid {
                         val calc = rememberCalculatorLauncherState()
                         Card(

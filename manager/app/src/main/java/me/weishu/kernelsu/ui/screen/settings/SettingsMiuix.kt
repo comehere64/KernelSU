@@ -211,48 +211,7 @@ fun SettingPagerMiuix(
                     }
 
 
-                    Card(
-                        modifier = Modifier
-                            .padding(vertical = 12.dp)
-                            .fillMaxWidth(),
-                    ) {
-                        if (uiState.isLkmMode) {
-                            val uninstall = stringResource(id = R.string.settings_uninstall)
-                            ArrowPreference(
-                                title = uninstall,
-                                enabled = !uiState.isLateLoadMode,
-                                startAction = {
-                                    Icon(
-                                        Icons.Rounded.Delete,
-                                        modifier = Modifier.padding(end = 6.dp),
-                                        contentDescription = uninstall,
-                                        tint = colorScheme.onBackground,
-                                    )
-                                },
-                                onClick = { showUninstallDialog.value = true },
-                            )
-                            UninstallDialog(
-                                show = showUninstallDialog.value,
-                                onDismissRequest = { showUninstallDialog.value = false }
-                            )
-                        }
-
-                        val hideManager = stringResource(id = R.string.settings_hide_manager)
-                        ArrowPreference(
-                            title = hideManager,
-                            summary = stringResource(id = R.string.settings_hide_manager_summary),
-                            startAction = {
-                                Icon(
-                                    Icons.Rounded.VisibilityOff,
-                                    modifier = Modifier.padding(end = 6.dp),
-                                    contentDescription = hideManager,
-                                    tint = colorScheme.onBackground
-                                )
-                            },
-                            onClick = actions.onHideManager,
-                        )
-                    }
-                    Card(
+                                        Card(
                         modifier = Modifier
                             .padding(vertical = 12.dp)
                             .fillMaxWidth(),
