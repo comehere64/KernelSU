@@ -43,7 +43,14 @@ apksign {
 
 protobuf {
     protoc {
-        path = "/data/data/com.termux/files/usr/bin/protoc"
+        // 本地 Termux 用预装的 protoc（Android 上跑不了 Maven 的 x86_64 二进制）；
+        // CI/常规机器上不存在该路径，回落到 Maven 依赖里的 protoc 可执行文件。
+        val localProtoc = file("/data/data/com.termux/files/usr/bin/protoc")
+        if (localProtoc.exists() && localProtoc.length() > 1024) {
+            path = localProtoc.absolutePath
+        } else {
+            artifact = libs.protobuf.protoc.get().toString()
+        }
     }
     generateProtoTasks {
         ofNonTest().forEach { task ->
