@@ -13,6 +13,7 @@
 
 #include "arch.h"
 #include "klog.h" // IWYU pragma: keep
+#include "ksu.h"
 #include "hook/syscall_hook_manager.h"
 #include "hook/tp_marker.h"
 #include "feature/sucompat.h"
@@ -131,8 +132,26 @@ void __init ksu_syscall_hook_manager_init(void)
     pr_info("hook_manager: ksu_hook_manager_init called\n");
 
 #ifdef CONFIG_KRETPROBES
-    syscall_regfunc_rp = init_kretprobe("syscall_regfunc", syscall_regfunc_handler);
-    syscall_unregfunc_rp = init_kretprobe("syscall_unregfunc", syscall_unregfunc_handler);
+    /*
+     * late-load 下不注册这两个 kretprobe。
+     *
+     * 它们只做一件事：跟踪全局 tracepoint 注册计数，好决定要不要把
+     * 非本进程的 TIF_SYSCALL_TRACEPOINT 标记清掉。真正的系统调用拦截
+     * 走的是下面的 sys_enter tracepoint，与它们无关。
+     *
+     * 但 kretprobe 的痕迹非常显眼：
+     *   /sys/kernel/debug/kprobes/list 里两条记录
+     *   kallsyms 里的 kretprobe_trampoline / __kretprobe_trampoline 引用
+     *   ko 的 .kprobes 段
+     * 而 late-load 恰恰是"能被人随便翻 module 段"的场景。所以这里直接跳过，
+     * 退回非 kretprobe 分支的语义：注册完 tracepoint 后把我们的进程标出来。
+     */
+    if (ksu_late_loaded) {
+        pr_info("hook_manager: late load, skipping kprobe hooks\n");
+    } else {
+        syscall_regfunc_rp = init_kretprobe("syscall_regfunc", syscall_regfunc_handler);
+        syscall_unregfunc_rp = init_kretprobe("syscall_unregfunc", syscall_unregfunc_handler);
+    }
 #endif
 
     // Register syscall hooks via dispatcher
@@ -146,6 +165,10 @@ void __init ksu_syscall_hook_manager_init(void)
     ret = register_trace_prio_sys_enter(ksu_sys_enter_handler, NULL, INT_MIN);
 #ifndef CONFIG_KRETPROBES
     ksu_mark_running_process_locked();
+#else
+    // 没有 kretprobe 帮忙维持计数时，进程标记要自己补上。
+    if (ksu_late_loaded)
+        ksu_mark_running_process_locked();
 #endif
     if (ret) {
         pr_err("hook_manager: failed to register sys_enter tracepoint: %d\n", ret);
