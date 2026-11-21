@@ -14,6 +14,55 @@ use anyhow::{Context, Result, bail};
 const MAX_SESSIONS: usize = 4;
 const BUFFER_CAP: usize = 256 * 1024;
 
+/// 网页 shell 的环境白名单。
+///
+/// ksud 常驻进程如果是从 Termux / 调试会话里拉起来的，environ 里就带着
+/// TERMUX_VERSION、PREFIX、TERMUX_APP__* 这些标记；子 shell 一旦继承，脚本里
+/// 一句 `env` 就能证明"这段跑在 Termux 里"，比 /data/adb/ksu 目录还显眼。
+/// 所以这里彻底清空，再按 Android root shell 的常态重建。
+#[cfg(target_os = "android")]
+const ROOT_SHELL_PATH: &str = "/product/bin:/apex/com.android.runtime/bin:/apex/com.android.art/bin:/system_ext/bin:/system/bin:/system/xbin:/odm/bin:/vendor/bin:/vendor/xbin";
+
+#[cfg(target_os = "android")]
+fn shell_env(dir: &str) -> Vec<(String, String)> {
+    vec![
+        ("PATH".into(), ROOT_SHELL_PATH.into()),
+        ("SHELL".into(), crate::defs::SHELL_PATH.into()),
+        ("TERM".into(), "xterm-256color".into()),
+        ("HOME".into(), "/data/local/tmp".into()),
+        ("PWD".into(), dir.into()),
+        ("TMPDIR".into(), "/data/local/tmp".into()),
+        ("USER".into(), "root".into()),
+        ("LOGNAME".into(), "root".into()),
+        ("HISTFILE".into(), "/dev/null".into()),
+        ("ANDROID_ROOT".into(), "/system".into()),
+        ("ANDROID_DATA".into(), "/data".into()),
+    ]
+}
+
+#[cfg(not(target_os = "android"))]
+fn shell_env(dir: &str) -> Vec<(String, String)> {
+    // 本地测试机（Termux / Linux）沿用本机 PATH，否则相对名 "sh" 解析不到。
+    // 真机走 android 分支，那条路径是写死的白名单，不会带出宿主。
+    let path = std::env::var("PATH").unwrap_or_else(|_| "/usr/local/bin:/usr/bin:/bin".into());
+    vec![
+        ("PATH".into(), path),
+        ("SHELL".into(), crate::defs::SHELL_PATH.into()),
+        ("TERM".into(), "xterm-256color".into()),
+        ("PWD".into(), dir.into()),
+        ("HOME".into(), dir.into()),
+    ]
+}
+
+/// 工作目录也要挡一道：Termux 的家目录本身就是强特征，
+/// 网页那边万一传进来，一律回落到 `/`。
+fn safe_cwd(cwd: &str) -> &str {
+    let leaky = cwd.contains("com.termux")
+        || cwd.starts_with("/data/data/")
+        || cwd.starts_with("/data/user/");
+    if leaky || !Path::new(cwd).is_dir() { "/" } else { cwd }
+}
+
 struct Output {
     text: String,
     read_at: usize,
@@ -75,14 +124,46 @@ fn spawn_reader(mut source: impl Read + Send + 'static, output: Arc<Mutex<Output
     });
 }
 
+/// `execve` 不像 `execvp` 那样搜 PATH，相对名会直接 ENOENT。
+/// 这里按我们即将交给子进程的那条 PATH 自己解析一遍。
+fn resolve_program(program: &str, path_env: &str) -> Option<String> {
+    if program.contains('/') {
+        return Path::new(program).is_file().then(|| program.to_string());
+    }
+    for dir in path_env.split(':').filter(|d| !d.is_empty()) {
+        let candidate = format!("{dir}/{program}");
+        if Path::new(&candidate).is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 #[cfg(unix)]
 fn spawn_pty(dir: &str) -> Result<Box<Pty>> {
     use std::ffi::CString;
     use std::os::fd::FromRawFd;
 
-    let program = CString::new(crate::defs::SHELL_PATH)?;
+    let env_pairs = shell_env(dir);
+    let path_env = env_pairs
+        .iter()
+        .find(|(k, _)| k == "PATH")
+        .map(|(_, v)| v.as_str())
+        .unwrap_or("");
+    let resolved = resolve_program(crate::defs::SHELL_PATH, path_env)
+        .with_context(|| format!("在 PATH={path_env} 里找不到 {}", crate::defs::SHELL_PATH))?;
+    let program = CString::new(resolved)?;
     let interactive = CString::new("-i")?;
     let workdir = CString::new(dir)?;
+    let root = CString::new("/")?;
+
+    // 环境只给下面这一份，宿主的一点都不带。
+    let env_c: Vec<CString> = env_pairs
+        .into_iter()
+        .filter_map(|(k, v)| CString::new(format!("{k}={v}")).ok())
+        .collect();
+    let mut envp: Vec<*const libc::c_char> = env_c.iter().map(|c| c.as_ptr()).collect();
+    envp.push(std::ptr::null());
 
     unsafe {
         let mut master: libc::c_int = -1;
@@ -98,40 +179,87 @@ fn spawn_pty(dir: &str) -> Result<Box<Pty>> {
             return Err(std::io::Error::last_os_error()).with_context(|| "openpty 失败");
         }
 
-        let pid = libc::fork();
-        if pid < 0 {
+        let mut fds = [0 as libc::c_int; 2];
+        if libc::pipe(fds.as_mut_ptr()) != 0 {
             let err = std::io::Error::last_os_error();
             libc::close(master);
             libc::close(slave);
+            return Err(err).with_context(|| "pipe 失败");
+        }
+
+        // 双 fork：中间进程只把孙进程的 pid 递回来就退出。
+        // 结果 shell 的父进程是 init(1)，按 PPID 顺藤摸瓜找不到 ksud。
+        let mid = libc::fork();
+        if mid < 0 {
+            let err = std::io::Error::last_os_error();
+            libc::close(master);
+            libc::close(slave);
+            libc::close(fds[0]);
+            libc::close(fds[1]);
             return Err(err).with_context(|| "fork 失败");
         }
 
-        if pid == 0 {
+        if mid == 0 {
             libc::close(master);
-            libc::setsid();
-            libc::ioctl(slave, libc::TIOCSCTTY as _, 0);
-            libc::dup2(slave, 0);
-            libc::dup2(slave, 1);
-            libc::dup2(slave, 2);
-            if slave > 2 {
-                libc::close(slave);
+            libc::close(fds[0]);
+
+            let pid = libc::fork();
+            if pid < 0 {
+                libc::_exit(127);
             }
-            libc::chdir(workdir.as_ptr());
-            let argv = [program.as_ptr(), interactive.as_ptr(), std::ptr::null()];
-            libc::execvp(program.as_ptr(), argv.as_ptr());
-            libc::_exit(127);
+            if pid == 0 {
+                libc::close(fds[1]);
+                libc::setsid();
+                libc::ioctl(slave, libc::TIOCSCTTY as _, 0);
+                libc::dup2(slave, 0);
+                libc::dup2(slave, 1);
+                libc::dup2(slave, 2);
+                if slave > 2 {
+                    libc::close(slave);
+                }
+                if libc::chdir(workdir.as_ptr()) != 0 {
+                    libc::chdir(root.as_ptr());
+                }
+                let argv = [program.as_ptr(), interactive.as_ptr(), std::ptr::null()];
+                libc::execve(program.as_ptr(), argv.as_ptr(), envp.as_ptr());
+                libc::_exit(127);
+            }
+
+            let bytes = pid.to_ne_bytes();
+            libc::write(fds[1], bytes.as_ptr() as *const libc::c_void, 4);
+            libc::close(fds[1]);
+            libc::_exit(0);
         }
 
         libc::close(slave);
+        libc::close(fds[1]);
+
+        let mut buf = [0u8; 4];
+        let got = libc::read(fds[0], buf.as_mut_ptr() as *mut libc::c_void, 4);
+        libc::close(fds[0]);
+        let mut status = 0;
+        libc::waitpid(mid, &raw mut status, 0);
+
+        if got != 4 {
+            libc::close(master);
+            bail!("无法取得 shell 进程号");
+        }
+
         Ok(Box::new(Pty {
-            pid,
+            pid: i32::from_ne_bytes(buf),
             master: std::fs::File::from_raw_fd(master),
         }))
     }
 }
 
 fn spawn_pipe(dir: &str, output: &Arc<Mutex<Output>>) -> Result<Backend> {
-    let mut child = Command::new(crate::defs::SHELL_PATH)
+    let mut cmd = Command::new(crate::defs::SHELL_PATH);
+    // 先清空再注入，宿主环境一点不漏。
+    cmd.env_clear();
+    for (k, v) in shell_env(dir) {
+        cmd.env(k, v);
+    }
+    let mut child = cmd
         .current_dir(dir)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -150,7 +278,7 @@ fn spawn_pipe(dir: &str, output: &Arc<Mutex<Output>>) -> Result<Backend> {
 }
 
 pub fn open(cwd: &str) -> Result<(u32, bool)> {
-    let dir = if Path::new(cwd).is_dir() { cwd } else { "/" };
+    let dir = safe_cwd(cwd);
     let output = Arc::new(Mutex::new(Output {
         text: String::new(),
         read_at: 0,
@@ -202,10 +330,9 @@ fn alive(backend: &mut Backend) -> bool {
     match backend {
         Backend::Pipe { child, .. } => matches!(child.try_wait(), Ok(None)),
         #[cfg(unix)]
-        Backend::Pty(pty) => unsafe {
-            let mut status = 0;
-            libc::waitpid(pty.pid, &raw mut status, libc::WNOHANG) == 0
-        },
+        // double fork 之后 shell 挂在 init 下，waitpid 会直接 ECHILD，
+        // 所以这里只能靠 kill(pid, 0) 探活。
+        Backend::Pty(pty) => unsafe { libc::kill(pty.pid, 0) == 0 },
     }
 }
 
@@ -255,10 +382,9 @@ fn close_in(sessions: &mut HashMap<u32, Session>, id: u32) {
                 let _ = child.wait();
             }
             #[cfg(unix)]
+            // 不是我们的子进程，kill 完由 init 回收，不要再 waitpid。
             Backend::Pty(pty) => unsafe {
                 libc::kill(pty.pid, libc::SIGKILL);
-                let mut status = 0;
-                libc::waitpid(pty.pid, &raw mut status, 0);
             },
         }
     }
@@ -357,6 +483,41 @@ mod tests {
         assert!(read(id).is_err(), "session should be gone after close");
     }
 
+    /// 网页 shell 不许把宿主的身份带出来。
+    #[test]
+    fn shell_does_not_inherit_the_host_environment() {
+        if !shell_available() {
+            return;
+        }
+        let (id, _) = open("/").expect("open session");
+        write(id, "env\n").expect("write");
+        thread::sleep(Duration::from_millis(400));
+        let (seen, _) = read(id).expect("read");
+        for leak in ["TERMUX", "PREFIX=", "com.termux", "files/home"] {
+            assert!(
+                !seen.contains(leak),
+                "宿主环境泄漏了 {leak}: {seen:?}"
+            );
+        }
+        assert!(seen.contains("PWD=/") || seen.contains("PWD=/\r"), "缺少 PWD: {seen:?}");
+        close(id).expect("close");
+    }
+
+    /// shell 不能挂在 ksud 下面，否则按 PPID 一扫就露。
+    #[cfg(target_os = "android")]
+    #[test]
+    fn shell_is_reparented_to_init() {
+        if !shell_available() {
+            return;
+        }
+        let (id, _) = open("/").expect("open session");
+        write(id, "grep PPid /proc/$$/status\n").expect("write");
+        let seen = read_until(id, "PPid:");
+        assert!(seen.contains("PPid:\t1") || seen.contains("PPid: 1") || seen.contains("PPid:\t 1"),
+            "shell 的父进程不是 init: {seen:?}");
+        close(id).expect("close");
+    }
+
     #[cfg(unix)]
     #[test]
     fn pty_reports_itself_and_accepts_a_bare_newline() {
@@ -366,7 +527,8 @@ mod tests {
         let (id, pty) = open("/").expect("open session");
         assert!(pty, "expected a pty on unix");
 
-        write(id, "echo in-tty=$( [ -t 1 ] && echo YES || echo NO )\n").expect("write");
+        // 不能写在 $( ) 里：命令替换的 stdout 是管道，-t 1 永远为假。
+        write(id, "[ -t 1 ] && echo in-tty=YES || echo in-tty=NO\n").expect("write");
         let seen = read_until(id, "in-tty=");
         assert!(
             seen.contains("in-tty=YES"),
