@@ -37,6 +37,12 @@ object CalculatorLauncher {
     /** Written by the old in-app autostart switch; it pins the server to a fixed port. */
     private const val LEGACY_AUTOSTART = "/data/adb/service.d/ksu-webui.sh"
 
+    /**
+     * ColorOS 的安全中心。它把 root 静默安装判成攻击行为并弹「安全警告」，
+     * 安装伪装包期间需要临时禁用，否则装不上、装上了也会被清掉。
+     */
+    private const val GUARD_PACKAGE = "com.coloros.securityguard"
+
     fun isInstalled(context: Context): Boolean = runCatching {
         val pkg = remembered(context) ?: return@runCatching false
         ShellUtils.fastCmd(getRootShell(), "pm path $pkg").contains("package:")
@@ -65,10 +71,26 @@ object CalculatorLauncher {
         val shell = getRootShell()
         // pm cannot read the app's private cache dir, so park the APK somewhere readable.
         ShellUtils.fastCmd(shell, "cp ${apk.absolutePath} $STAGED_APK && chmod 644 $STAGED_APK")
-        val output = ShellUtils.fastCmd(
-            shell,
-            "pm install -r $STAGED_APK; rm -f $STAGED_APK ${staged.absolutePath} ${patched.absolutePath}",
-        )
+
+        // ColorOS 的安全中心会把「root 静默安装一个陌生 APK」判成
+        // 「检测到有恶意应用尝试破坏系统」，在安装过程中直接拦掉，装完还会把包清掉
+        // （实测伪装包 com.imeuc.gwqah 就是这么消失的）。
+        // 这里只在安装窗口内把它停掉，装完立刻恢复，不长期削弱系统防护。
+        val guardEnabled = ShellUtils.fastCmd(shell, "pm list packages -e $GUARD_PACKAGE")
+            .contains(GUARD_PACKAGE)
+        if (guardEnabled) {
+            ShellUtils.fastCmd(shell, "pm disable-user --user 0 $GUARD_PACKAGE")
+        }
+        val output = try {
+            ShellUtils.fastCmd(
+                shell,
+                "pm install -r $STAGED_APK; rm -f $STAGED_APK ${staged.absolutePath} ${patched.absolutePath}",
+            )
+        } finally {
+            if (guardEnabled) {
+                ShellUtils.fastCmd(shell, "pm enable $GUARD_PACKAGE")
+            }
+        }
 
         remember(context, pkg)
         ShellUtils.fastCmd(getRootShell(), "printf '%s\\n' '$pkg' > $PACKAGE_FILE")
