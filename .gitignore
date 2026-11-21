@@ -10,11 +10,11 @@ __pycache__
 /repack-config.json
 /userspace/ksud/.lkm_image_bootstrap.o
 
-/manager/app/src/main/assets/calculator.apk
+# 计算器模板 APK 必须随仓库走，CI 才能打进 assets（不是密钥，无敏感信息）
 
 # ddk build output (kernelsu-*.ko)
 /out
 
 # 签名私钥（本地保留，勿提交）
 key.jks
-manager/app/src/main/assets/calculator-signing.jks
+# calculator-signing.jks 走 GitHub Secret(CALC_KEYSTORE)，构建时落地，不入库

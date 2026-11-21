@@ -169,6 +169,13 @@ jobs:
             } >> gradle.properties
             echo "${{ secrets.KEYSTORE }}" | base64 -d > key.jks
           fi
+          # 计算器伪装包的重签名密钥。它和 manager 的签名键不同：manager 签自己，
+          # 这把签被改名的计算器 APK。私钥不入库，构建时从 secret 落地到 assets，
+          # 少了它 LauncherRenamer 会静默退回模板包名（每次装都同一个名字，可被枚举）。
+          if [ ! -z "${{ secrets.CALC_KEYSTORE }}" ]; then
+            echo "${{ secrets.CALC_KEYSTORE }}" | base64 -d > app/src/main/assets/calculator-signing.jks
+            ls -l app/src/main/assets/calculator-signing.jks
+          fi
 
       - name: Write PR key
         if: github.event_name == 'pull_request'
