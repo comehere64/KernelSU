@@ -233,6 +233,10 @@ fn link_ksud_to_bin() -> Result<()> {
 pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Result<()> {
     ensure_dir_exists(defs::ADB_DIR)?;
     let _ = std::fs::remove_file(defs::DAEMON_PATH);
+    // 老版本留下的 /data/adb/ksud 与 bin/ksud 软链：
+    // 留着等于把旧名字继续摆在明面上，也让"到底哪个在跑"变得不确定。
+    let _ = std::fs::remove_file(defs::LEGACY_DAEMON_PATH);
+    let _ = std::fs::remove_file(format!("{}ksud", defs::BINARY_DIR));
     std::fs::copy(
         // We should use /proc/self/exe, DO NOT resolve the real path
         // So that if someone execute /data/adb/ksud install, ksud won't be removed unexpectedly

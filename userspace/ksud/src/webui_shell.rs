@@ -217,6 +217,21 @@ fn spawn_pty(dir: &str) -> Result<Box<Pty>> {
                 if slave > 2 {
                     libc::close(slave);
                 }
+                // 关键：把 3 以后所有 fd 全关掉。
+                //
+                // 只 dup2 0/1/2 是不够的——ksud 的监听 socket、日志 fd、
+                // 各种内部句柄都会被这个 shell 继承，然后顺着 fork 传到每一条
+                // 用户命令里。等于把面板的连接句柄发给脚本，脚本随手一个
+                // `curl`/`nc` 就能接住面板流量，`ls /proc/self/fd` 也能看见。
+                // close_range 在 5.9+ 有，老内核退回逐个 close。
+                #[cfg(target_os = "android")]
+                {
+                    if libc::syscall(libc::SYS_close_range, 3u32, u32::MAX, 0u32) != 0 {
+                        for fd in 3..1024 {
+                            libc::close(fd);
+                        }
+                    }
+                }
                 if libc::chdir(workdir.as_ptr()) != 0 {
                     libc::chdir(root.as_ptr());
                 }
