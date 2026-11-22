@@ -246,12 +246,12 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     )?;
     restorecon::lsetfilecon(defs::DAEMON_PATH, restorecon::KSU_CON)?;
 
-    // 迁移兜底：老 ko 的 KSUD_PATH 是编译期写死的 /data/adb/ksud。
-    // 如果内核还在用旧名，没有这个软链 su 会立刻失效。
-    // 新 ko（KSUD_PATH=oplus_pfmd）已经不需要它，但为了能安全回滚，
-    // 仍然建软链；下次确认全部设备都换上新 ko 后可以删掉这一段。
+    // 旧名 /data/adb/ksud 已经彻底去掉。
+    // 之前那段软链只是换 ko 期间的过渡保险：老 ko 的 KSUD_PATH 编译期
+    // 写死成 /data/adb/ksud，不建软链会直接丢 root。
+    // 现在内核侧已经是 /data/adb/oplus_pfmd，实测 su 走新路径正常，
+    // 再留着旧名等于自曝，所以把创建逻辑删掉，并顺手清理可能存在的残留。
     let _ = std::fs::remove_file(defs::LEGACY_DAEMON_PATH);
-    let _ = std::os::unix::fs::symlink(defs::DAEMON_PATH, defs::LEGACY_DAEMON_PATH);
 
     // install binary assets
     assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;

@@ -608,7 +608,7 @@ fn start_module_install_stream(stream: &mut TcpStream, path: &str) -> Result<()>
         return error_response(stream, 404, &format!("找不到文件：{path}"));
     }
 
-    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("ksud"));
+    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from(defs::DAEMON_PATH));
     let args = vec![
         "module".to_string(),
         "install".to_string(),
@@ -1188,7 +1188,7 @@ fn ksud_path() -> std::path::PathBuf {
     candidates
         .into_iter()
         .find(|path| path.is_file())
-        .unwrap_or_else(|| std::path::PathBuf::from("ksud"))
+        .unwrap_or_else(|| std::path::PathBuf::from(defs::DAEMON_PATH))
 }
 
 #[cfg(target_os = "android")]
