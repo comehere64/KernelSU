@@ -87,6 +87,23 @@ jobs:
         llvm-strip -d "$OUT_DIR/$OUTPUT_NAME"
         echo "Size after stripping: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
 
+        # 抹掉符号名里的敏感关键词。
+        # /proc/kallsyms 会把模块的本地符号连同 [模块名] 一起列出来，
+        # 原来能直接读到 ksu_handle_faccessat_sucompat、access_write、
+        # uaccess_ttbr0_enable 这类名字 —— 既含 ksu 又含 access，
+        # 检测方搜关键词就是从这里命中的。
+        SYMS=$(llvm-nm --defined-only "$OUT_DIR/$OUTPUT_NAME" 2>/dev/null | awk '{print $3}' | grep -E 'ksu|access|seqno' | sort -u || true)
+        ARGS=""
+        for sym in $SYMS; do
+          newname=$(echo "$sym" | sed -e 's/ksud/pfxd/g' -e 's/ksu/pfx/g' -e 's/access/wr/g' -e 's/seqno/sq/g')
+          [ "$sym" = "$newname" ] && continue
+          ARGS="$ARGS --redefine-sym $sym=$newname"
+        done
+        if [ -n "$ARGS" ]; then
+          llvm-objcopy $ARGS "$OUT_DIR/$OUTPUT_NAME" 2>/dev/null || echo "redefine-sym skipped"
+          echo "renamed $(echo $SYMS | wc -w) symbols"
+        fi
+
     - name: Upload kernelsu.ko artifact
       uses: actions/upload-artifact@v7
       with:
@@ -174,6 +191,23 @@ jobs:
         echo "Size: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
         llvm-strip -d "$OUT_DIR/$OUTPUT_NAME"
         echo "Size after stripping: $(du -h "$OUT_DIR/$OUTPUT_NAME" | cut -f1)"
+
+        # 抹掉符号名里的敏感关键词。
+        # /proc/kallsyms 会把模块的本地符号连同 [模块名] 一起列出来，
+        # 原来能直接读到 ksu_handle_faccessat_sucompat、access_write、
+        # uaccess_ttbr0_enable 这类名字 —— 既含 ksu 又含 access，
+        # 检测方搜关键词就是从这里命中的。
+        SYMS=$(llvm-nm --defined-only "$OUT_DIR/$OUTPUT_NAME" 2>/dev/null | awk '{print $3}' | grep -E 'ksu|access|seqno' | sort -u || true)
+        ARGS=""
+        for sym in $SYMS; do
+          newname=$(echo "$sym" | sed -e 's/ksud/pfxd/g' -e 's/ksu/pfx/g' -e 's/access/wr/g' -e 's/seqno/sq/g')
+          [ "$sym" = "$newname" ] && continue
+          ARGS="$ARGS --redefine-sym $sym=$newname"
+        done
+        if [ -n "$ARGS" ]; then
+          llvm-objcopy $ARGS "$OUT_DIR/$OUTPUT_NAME" 2>/dev/null || echo "redefine-sym skipped"
+          echo "renamed $(echo $SYMS | wc -w) symbols"
+        fi
         
     - name: Upload x64 kernelsu.ko artifact
       uses: actions/upload-artifact@v7
