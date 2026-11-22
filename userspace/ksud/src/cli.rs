@@ -165,7 +165,9 @@ enum Commands {
         ///
         /// Generous by default: browsers freeze their timers while the page is hidden, so a
         /// short timeout would kill the server every time the user switches apps.
-        #[arg(long, default_value_t = 120)]
+        // WebUI 是给人用的，2 分钟空闲就退出太短：关掉页面去干别的事再回来，
+        // daemon 已经没了，得重新进计算器触发一次。这里放宽到 30 分钟。
+        #[arg(long, default_value_t = 1800)]
         idle_timeout: u64,
         /// Serve until the launcher's guard connection closes, whatever the page is doing
         ///

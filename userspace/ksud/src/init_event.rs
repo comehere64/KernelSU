@@ -204,8 +204,19 @@ fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
     let bootlog = logdir.join(format!("{logname}.log"));
     let oldbootlog = logdir.join(format!("{logname}.old.log"));
 
+    // logcat -b all / dmesg -w 是把整段系统日志落盘，单次就能写到 20M 以上。
+    // 只留一份 .old.log 挡不住总量，实测攒到过 52M。
+    // 先看体积：超上限就把新旧一起删掉重新开始，而不是再轮转一份。
     if bootlog.exists() {
-        std::fs::rename(&bootlog, oldbootlog)?;
+        let too_big = std::fs::metadata(&bootlog)
+            .map(|m| m.len() > defs::BOOTLOG_MAX_BYTES)
+            .unwrap_or(false);
+        if too_big {
+            let _ = std::fs::remove_file(&bootlog);
+            let _ = std::fs::remove_file(&oldbootlog);
+        } else {
+            std::fs::rename(&bootlog, oldbootlog)?;
+        }
     }
 
     let bootlog = std::fs::File::create(bootlog)?;

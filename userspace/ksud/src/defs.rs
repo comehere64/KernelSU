@@ -33,6 +33,9 @@ mod android {
     pub const BINARY_DIR: &str = concatcp!(WORKING_DIR, "bin/");
     pub const LIBRARY_DIR: &str = concatcp!(WORKING_DIR, "lib/");
     pub const LOG_DIR: &str = concatcp!(WORKING_DIR, "log/");
+    /// 单个 bootlog（logcat/dmesg）的体积上限。超过就丢弃重来，
+    /// 避免 /data/adb/mtk/log 无限膨胀（曾经涨到 52M）。
+    pub const BOOTLOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
     pub const SULOGD_LOCK_PATH: &str = concatcp!(WORKING_DIR, "sulogd.lock");
 
     pub const PROFILE_DIR: &str = concatcp!(WORKING_DIR, "profile/");

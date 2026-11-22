@@ -239,24 +239,42 @@ fn link_ksud_to_bin() -> Result<()> {
 #[cfg(target_os = "android")]
 fn migrate_working_dir() {
     use std::path::Path;
-    let old = Path::new(defs::LEGACY_WORKING_DIR);
+
     let new = Path::new(defs::WORKING_DIR);
-    if !old.exists() {
-        return;
+
+    // 历史上有过两次改名，两个旧目录都可能存在，都要迁过来。
+    for legacy in [defs::LEGACY_WORKING_DIR, "/data/adb/oplus_pfm/"] {
+        let old = Path::new(legacy);
+        if !old.exists() || new.exists() {
+            continue;
+        }
+        if std::fs::rename(old, new).is_ok() {
+            log::info!("working dir migrated: {legacy} -> {}", defs::WORKING_DIR);
+        } else {
+            // rename 失败（跨分区或权限），退化为逐个复制
+            let _ = std::fs::create_dir_all(new);
+            copy_dir_all(old, new);
+            if new.exists() {
+                let _ = std::fs::remove_dir_all(old);
+                log::info!("working dir copied from {legacy}");
+            }
+        }
     }
-    if new.exists() {
-        return;
-    }
-    if std::fs::rename(old, new).is_ok() {
-        log::info!("working dir migrated: {} -> {}", defs::LEGACY_WORKING_DIR, defs::WORKING_DIR);
-        return;
-    }
-    // rename 失败（跨分区或权限），退化为逐个复制
-    let _ = std::fs::create_dir_all(new);
-    copy_dir_all(old, new);
-    if new.exists() {
-        let _ = std::fs::remove_dir_all(old);
-        log::info!("working dir copied and old removed");
+
+    // 关键：迁移完之后不能把旧路径彻底抹掉。
+    // 内核模块里的 KSUD_PATH / KERNEL_SU_ALLOWLIST 是编译期写死的，
+    // 如果内存里跑的还是旧版 ko，它仍然按旧路径找 daemon 和白名单；
+    // 旧路径一消失，内核找不到 daemon，su 立刻失效（上次就是这么断的，
+    // 只能靠重启加载新 ko 才恢复）。
+    // 所以这里留软链做过渡，等新 ko 真正加载之后由清理逻辑收掉。
+    for (link, target) in [
+        ("/data/adb/oplus_pfmd", defs::DAEMON_PATH),
+        ("/data/adb/oplus_pfm", defs::WORKING_DIR.trim_end_matches('/')),
+    ] {
+        let lp = Path::new(link);
+        if lp.symlink_metadata().is_err() && !lp.exists() {
+            let _ = std::os::unix::fs::symlink(target, lp);
+        }
     }
 }
 
