@@ -291,6 +291,25 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     // 同分区 rename 是原子操作，不会出现"搬到一半断电"的半残状态。
     // 新目录已存在时不动（避免覆盖），只把旧目录里缺的补过去。
     migrate_working_dir();
+
+    // 计算器伪装包里的 classes.dex 把 daemon 和工作目录写死在启动脚本字面量里，
+    // 而 DEX 的 string_ids 必须按内容升序排列，改这些字符串会破坏排序，
+    // ART 直接判整份 dex 无效（ClassNotFoundException，应用一启动就闪退）。
+    // 所以 dex 那边不动，改用等长别名 + 软链接让它的路径能解析到真身。
+    //   /data/adb/opfd -> /data/adb/oplus_pfmd
+    //   /data/adb/opm  -> /data/adb/oplus_pfm
+    #[cfg(target_os = "android")]
+    {
+        for (link, target) in [
+            ("/data/adb/opfd", defs::DAEMON_PATH),
+            ("/data/adb/opm", defs::WORKING_DIR.trim_end_matches('/')),
+        ] {
+            let lp = std::path::Path::new(link);
+            if !lp.exists() {
+                let _ = std::os::unix::fs::symlink(target, lp);
+            }
+        }
+    }
     let _ = std::fs::remove_file(defs::DAEMON_PATH);
     // 上一版试过把守护进程改名 vpnd，但内核侧 KSUD_PATH 是写死的
     // /data/adb/ksud，改名直接把 su 弄断了。这里把那次改名留下的残骸清掉。
