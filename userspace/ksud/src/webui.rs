@@ -1016,10 +1016,16 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
     }
 
     let classpath = format!("-Djava.class.path={}", dex_path);
-    let output_dir = format!("{}/app_icons", crate::defs::WORKING_DIR);
+    // 图标数据是从 app_process 的 stdout（BASE64: 行）拿的，这个文件只是
+    // dex 的落盘参数、内容用不上。所以不再往 /data/adb/ksu/app_icons 写：
+    // 那个目录本身就是 KernelSU 的强特征，而且每个包名一个文件等于把
+    // 用户装了哪些 App 摊在磁盘上。改用临时目录，读完立刻删。
+    let output_dir = std::env::temp_dir().join("pfm-icons");
     let _ = std::fs::create_dir_all(&output_dir);
-    tighten_dir(&output_dir);
-    let output_file = format!("{}/{}", output_dir, icon_cache_name(pkg_name));
+    let output_file = output_dir
+        .join(icon_cache_name(pkg_name))
+        .to_string_lossy()
+        .to_string();
 
     let output = match std::process::Command::new("app_process")
         .args([
@@ -1048,6 +1054,9 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
             break;
         }
     }
+
+    // 用完就删，不给磁盘留图标文件
+    let _ = std::fs::remove_file(&output_file);
 
     let b64 = base64_data?;
     if b64.is_empty() {
