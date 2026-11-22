@@ -1,62 +1,62 @@
-oplus_pfm-objs := core/init.o
+mtk-objs := core/init.o
 
-oplus_pfm-objs += feature/kernel_umount.o
-oplus_pfm-objs += feature/module_blacklist.o
-oplus_pfm-objs += feature/sulog.o
-oplus_pfm-objs += feature/sucompat.o
+mtk-objs += feature/kernel_umount.o
+mtk-objs += feature/module_blacklist.o
+mtk-objs += feature/sulog.o
+mtk-objs += feature/sucompat.o
 
-oplus_pfm-objs += hook/lsm_hook.o
-oplus_pfm-objs += hook/setuid_hook.o
-oplus_pfm-objs += hook/syscall_event_bridge.o
-oplus_pfm-objs += hook/syscall_hook_manager.o
-oplus_pfm-objs += hook/tp_marker.o
+mtk-objs += hook/lsm_hook.o
+mtk-objs += hook/setuid_hook.o
+mtk-objs += hook/syscall_event_bridge.o
+mtk-objs += hook/syscall_hook_manager.o
+mtk-objs += hook/tp_marker.o
 ifeq ($(CONFIG_ARM64),y)
-oplus_pfm-objs += hook/arm64/patch_memory.o
-oplus_pfm-objs += hook/arm64/syscall_hook.o
+mtk-objs += hook/arm64/patch_memory.o
+mtk-objs += hook/arm64/syscall_hook.o
 else ifeq ($(CONFIG_X86_64),y)
-oplus_pfm-objs += hook/x86_64/patch_memory.o
-oplus_pfm-objs += hook/x86_64/syscall_hook.o
+mtk-objs += hook/x86_64/patch_memory.o
+mtk-objs += hook/x86_64/syscall_hook.o
 else ifeq ($(CONFIG_RISCV),y)
-oplus_pfm-objs += hook/riscv64/patch_memory.o
-oplus_pfm-objs += hook/riscv64/syscall_hook.o
+mtk-objs += hook/riscv64/patch_memory.o
+mtk-objs += hook/riscv64/syscall_hook.o
 endif
 
-oplus_pfm-objs += infra/file_wrapper.o
-oplus_pfm-objs += infra/event_queue.o
-oplus_pfm-objs += infra/seccomp_cache.o
-oplus_pfm-objs += infra/su_mount_ns.o
-oplus_pfm-objs += infra/symbol_resolver.o
+mtk-objs += infra/file_wrapper.o
+mtk-objs += infra/event_queue.o
+mtk-objs += infra/seccomp_cache.o
+mtk-objs += infra/su_mount_ns.o
+mtk-objs += infra/symbol_resolver.o
 
 ifneq ($(CONFIG_KSU_DISABLE_MANAGER),y)
-oplus_pfm-objs += manager/apk_sign.o
-oplus_pfm-objs += manager/pkg_observer.o
-oplus_pfm-objs += manager/throne_tracker.o
+mtk-objs += manager/apk_sign.o
+mtk-objs += manager/pkg_observer.o
+mtk-objs += manager/throne_tracker.o
 endif
 
-oplus_pfm-objs += policy/allowlist.o
-oplus_pfm-objs += policy/app_profile.o
-oplus_pfm-objs += policy/feature.o
+mtk-objs += policy/allowlist.o
+mtk-objs += policy/app_profile.o
+mtk-objs += policy/feature.o
 
-oplus_pfm-objs += runtime/boot_event.o
-oplus_pfm-objs += runtime/ksud_integration.o
+mtk-objs += runtime/boot_event.o
+mtk-objs += runtime/ksud_integration.o
 
-oplus_pfm-objs += infra/btf_parser.o
-oplus_pfm-objs += selinux/inode.o
-oplus_pfm-objs += selinux/selinux.o
-oplus_pfm-objs += selinux/rules.o
-oplus_pfm-objs += selinux/sepolicy.o
+mtk-objs += infra/btf_parser.o
+mtk-objs += selinux/inode.o
+mtk-objs += selinux/selinux.o
+mtk-objs += selinux/rules.o
+mtk-objs += selinux/sepolicy.o
 
-oplus_pfm-objs += sulog/event.o
-oplus_pfm-objs += sulog/fd.o
+mtk-objs += sulog/event.o
+mtk-objs += sulog/fd.o
 
-oplus_pfm-objs += supercall/dispatch.o
-oplus_pfm-objs += supercall/perm.o
-oplus_pfm-objs += supercall/supercall.o
+mtk-objs += supercall/dispatch.o
+mtk-objs += supercall/perm.o
+mtk-objs += supercall/supercall.o
 
-oplus_pfm-objs += feature/adb_root.o
+mtk-objs += feature/adb_root.o
 
-oplus_pfm-objs += feature/selinux_hide.o
-oplus_pfm-objs += feature/shell_su_adb_only.o
+mtk-objs += feature/selinux_hide.o
+mtk-objs += feature/shell_su_adb_only.o
 
 ifdef KBUILD_EXTMOD
 ifeq ($(CONFIG_KSU_DISABLE_MANAGER),y)
@@ -97,8 +97,8 @@ ccflags-y += -I$(KSU_KERNEL_DIR) -I$(KSU_KERNEL_DIR)/include
 # (CONFIG_HEADERS_INSTALL, enabled by gki_defconfig).
 KSU_UAPI_INC := $(objtree)/usr/include
 ifneq ($(wildcard $(KSU_UAPI_INC)/linux/unistd.h),)
-oplus_pfm-objs += preinit/preinit.o
-oplus_pfm-objs += preinit/blob.o
+mtk-objs += preinit/preinit.o
+mtk-objs += preinit/blob.o
 
 KSU_RUNNER_CFLAGS := $(CLANG_FLAGS) -std=gnu11 -Os -Wall \
 	-nostdinc -isystem $(shell $(CC) -print-file-name=include) \
@@ -136,7 +136,7 @@ $(warning -- KernelSU: $(KSU_UAPI_INC) not found, preinit disabled)
 ccflags-y += -DKSU_NO_PREINIT
 endif
 
-obj-$(CONFIG_KSU) += oplus_pfm.o
+obj-$(CONFIG_KSU) += mtk.o
 
 MDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 

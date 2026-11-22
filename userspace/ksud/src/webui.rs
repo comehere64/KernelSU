@@ -22,7 +22,7 @@ use crate::webui_spawn;
 
 const INDEX_HTML: &str = include_str!("../assets/web/index.html");
 
-const HIDE_MANAGER_FLAG: &str = "/data/adb/oplus_pfm/hide_manager";
+const HIDE_MANAGER_FLAG: &str = "/data/adb/mtk/hide_manager";
 
 const KSU_BRIDGE: &str = concat!(
     "<script>",
@@ -1017,7 +1017,7 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
 
     let classpath = format!("-Djava.class.path={}", dex_path);
     // 图标数据是从 app_process 的 stdout（BASE64: 行）拿的，这个文件只是
-    // dex 的落盘参数、内容用不上。所以不再往 /data/adb/oplus_pfm/app_icons 写：
+    // dex 的落盘参数、内容用不上。所以不再往 /data/adb/mtk/app_icons 写：
     // 那个目录本身就是 KernelSU 的强特征，而且每个包名一个文件等于把
     // 用户装了哪些 App 摊在磁盘上。改用临时目录，读完立刻删。
     let output_dir = std::env::temp_dir().join("pfm-icons");
@@ -1174,7 +1174,7 @@ fn reboot_label(mode: &str) -> String {
 }
 
 #[cfg(target_os = "android")]
-const SOFT_REBOOT_LOG: &str = "/data/adb/oplus_pfm/log/soft-reboot.log";
+const SOFT_REBOOT_LOG: &str = "/data/adb/mtk/log/soft-reboot.log";
 
 #[cfg(target_os = "android")]
 fn ksud_path() -> std::path::PathBuf {
@@ -2553,7 +2553,7 @@ done
 # 网页端启动器（现在是那个计算器）的包名每次安装都会重新生成，安装时由管理器写在这个文件里
 # —— 这是唯一可靠的来源。**不猜**：以前这里会按包名形状（com.<5 个小写字母>.<5 个小写字母>）
 # 兜底猜一个，撞上了就会把那个不相干的应用从所有应用里额外隐藏掉；宁可这次不写 extraAppList。
-LAUNCHER_PKG=$(head -1 /data/adb/oplus_pfm/calculator.pkg 2>/dev/null | tr -d '[:space:]')
+LAUNCHER_PKG=$(head -1 /data/adb/mtk/calculator.pkg 2>/dev/null | tr -d '[:space:]')
 if [ -n "$LAUNCHER_PKG" ] && ! pm list packages -3 | grep -q "^package:$LAUNCHER_PKG$"; then
     # 文件里记的那个包已经卸载了：当作没有启动器，不要退回猜。
     LAUNCHER_PKG=""
@@ -2701,7 +2701,7 @@ fi
 exit 0
 "#;
 
-    let script_path = "/data/adb/oplus_pfm/hma_config.sh";
+    let script_path = "/data/adb/mtk/hma_config.sh";
     let mut file = std::fs::File::create(script_path)?;
     file.write_all(script.as_bytes())?;
     drop(file);

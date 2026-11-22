@@ -231,7 +231,7 @@ fn link_ksud_to_bin() -> Result<()> {
 }
 
 
-/// 把旧工作目录 /data/adb/ksu 迁到 /data/adb/oplus_pfm。
+/// 把旧工作目录（/data/adb/ksu 或 /data/adb/oplus_pfm）迁到 /data/adb/mtk。
 ///
 /// 只做一次：新目录已经存在就直接返回。
 /// 先尝试 rename（同分区原子，最快最安全），失败再逐个复制。
@@ -287,7 +287,7 @@ fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) {
 pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Result<()> {
     ensure_dir_exists(defs::ADB_DIR)?;
 
-    // 工作目录改名迁移：/data/adb/ksu -> /data/adb/oplus_pfm
+    // 工作目录改名迁移：/data/adb/ksu -> /data/adb/mtk
     // 同分区 rename 是原子操作，不会出现"搬到一半断电"的半残状态。
     // 新目录已存在时不动（避免覆盖），只把旧目录里缺的补过去。
     migrate_working_dir();
@@ -296,18 +296,11 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     // 而 DEX 的 string_ids 必须按内容升序排列，改这些字符串会破坏排序，
     // ART 直接判整份 dex 无效（ClassNotFoundException，应用一启动就闪退）。
     // 所以 dex 那边不动，改用等长别名 + 软链接让它的路径能解析到真身。
-    //   /data/adb/opfd -> /data/adb/oplus_pfmd
-    //   /data/adb/opm  -> /data/adb/oplus_pfm
-    #[cfg(target_os = "android")]
-    {
-        for (link, target) in [
-            ("/data/adb/opfd", defs::DAEMON_PATH),
-            ("/data/adb/opm", defs::WORKING_DIR.trim_end_matches('/')),
-        ] {
-            let lp = std::path::Path::new(link);
-            if !lp.exists() {
-                let _ = std::os::unix::fs::symlink(target, lp);
-            }
+    // 旧名字留下的软链接清掉，避免 /data/adb 下堆一串历史别名
+    for stale in ["/data/adb/opfm", "/data/adb/opfd", "/data/adb/opm"] {
+        let lp = std::path::Path::new(stale);
+        if lp.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+            let _ = std::fs::remove_file(lp);
         }
     }
     let _ = std::fs::remove_file(defs::DAEMON_PATH);
@@ -327,7 +320,7 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     // 旧名 /data/adb/ksud 已经彻底去掉。
     // 之前那段软链只是换 ko 期间的过渡保险：老 ko 的 KSUD_PATH 编译期
     // 写死成 /data/adb/ksud，不建软链会直接丢 root。
-    // 现在内核侧已经是 /data/adb/oplus_pfmd，实测 su 走新路径正常，
+    // 现在内核侧已经是 /data/adb/mtkd，实测 su 走新路径正常，
     // 再留着旧名等于自曝，所以把创建逻辑删掉，并顺手清理可能存在的残留。
     let _ = std::fs::remove_file(defs::LEGACY_DAEMON_PATH);
 

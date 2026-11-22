@@ -346,7 +346,7 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
                     // LSM 名会出现在 /sys/kernel/security/lsm 里，原来叫 "ksu" 等于挂个牌子。
                     // 但不能借用已有的 lsm 名（selinux / capability 等），
                     // 同名会在列表里重复，反而更扎眼。用厂商风格的唯一名。
-                    hook->list.lsm = "oplus_pfm";
+                    hook->list.lsm = "mtk";
                     *(void **)((char *)selected_entry + hook->hook_offset) = hook->replacement;
                     selected_slot = (void **)&head->first;
                     selected_origin = NULL;

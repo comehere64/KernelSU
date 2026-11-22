@@ -65,4 +65,4 @@ for i in "${!KMIS[@]}"; do
 done
 
 echo "========== Final output =========="
-ls -l out-x64/*/oplus_pfm.ko
+ls -l out-x64/*/mtk.ko

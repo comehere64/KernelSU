@@ -1,7 +1,7 @@
 /// The panel's three own state files.
-pub const WEBUI_JUMPS_PATH: &str = "/data/adb/oplus_pfm/webui_jumps.json";
-pub const WEBUI_QUICK_RUN_PATH: &str = "/data/adb/oplus_pfm/webui_quickrun.json";
-pub const WEBUI_THEME_PATH: &str = "/data/adb/oplus_pfm/webui_theme.json";
+pub const WEBUI_JUMPS_PATH: &str = "/data/adb/mtk/webui_jumps.json";
+pub const WEBUI_QUICK_RUN_PATH: &str = "/data/adb/mtk/webui_quickrun.json";
+pub const WEBUI_THEME_PATH: &str = "/data/adb/mtk/webui_theme.json";
 
 /// The `sh` to hand a child.
 pub const SHELL_PATH: &str = if cfg!(target_os = "android") {
@@ -25,9 +25,9 @@ mod android {
     pub const ADB_DIR: &str = "/data/adb/";
     // 工作目录原名 /data/adb/ksu，这个路径本身就是 KernelSU 的强特征：
     // /data/adb/ksu、/data/adb/ksu/bin、/data/adb/ksu/.allowlist 全都能被扫到。
-    // 改成厂商风格的名字，与模块名 oplus_pfm 保持一致。
+    // 改成厂商风格的名字，与模块名 mtk 保持一致。
     // 老目录由 utils.rs 的 install() 负责迁移，不会丢数据。
-    pub const WORKING_DIR: &str = concatcp!(ADB_DIR, "oplus_pfm/");
+    pub const WORKING_DIR: &str = concatcp!(ADB_DIR, "mtk/");
     /// 改名前的旧工作目录，只用于迁移。
     pub const LEGACY_WORKING_DIR: &str = concatcp!(ADB_DIR, "ksu/");
     pub const BINARY_DIR: &str = concatcp!(WORKING_DIR, "bin/");
@@ -47,10 +47,10 @@ mod android {
     /// 试过改名 `vpnd` 来降低可识别度，但内核侧 KSUD_PATH 是编译期常量，
     /// su 被拦截后固定重定向到 /data/adb/ksud，改名会让 su 直接失效。
     /// 要改名必须内核 ko 与用户态同时改，否则 root 会断。保持 ksud。
-    pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "oplus_pfmd");
+    pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "mtkd");
     pub const LIBADBROOT_PATH: &str = concatcp!(LIBRARY_DIR, "libadbroot.so");
 
-    pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "oplus_pfmd");
+    pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "mtkd");
 
     /// 迁移期兼容：老内核的 KSUD_PATH 还是 /data/adb/ksud，
     /// 安装完新二进制后在这里留一个软链指过去，避免换 ko 之前 su 失效。

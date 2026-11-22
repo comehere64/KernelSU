@@ -14,8 +14,8 @@
 // 同时 ksu_type() 是重复声明，可能与现有 type 冲突导致策略加载失败。
 //
 // 所以用一个系统里不存在、风格像厂商私有的名字。
-#define KERNEL_SU_DOMAIN "oplus_pfm_d"
-#define KERNEL_SU_FILE "oplus_pfm_file"
+#define KERNEL_SU_DOMAIN "mtk_d"
+#define KERNEL_SU_FILE "mtk_file"
 
 #define KERNEL_SU_CONTEXT "u:r:" KERNEL_SU_DOMAIN ":s0"
 #define KSU_FILE_CONTEXT "u:object_r:" KERNEL_SU_FILE ":s0"

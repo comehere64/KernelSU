@@ -19,7 +19,7 @@ object HideAppList {
     const val SCRIPT_ASSET = "hma-oss-config.sh"
 
     /** Where the script is put before it runs. ksud's directory is root-only and already exists. */
-    private const val SCRIPT_PATH = "/data/adb/oplus_pfm/hma-config.sh"
+    private const val SCRIPT_PATH = "/data/adb/mtk/hma-config.sh"
 
     /** Scene's package name, the one the Scene variant keeps out of the hidden scope entirely. */
     private const val SCENE_PACKAGE = "com.omarea.vtools"

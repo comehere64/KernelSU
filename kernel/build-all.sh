@@ -16,8 +16,8 @@ for kmi in $KMIS; do
     echo "========== Building $kmi =========="
     ODIR="$(realpath .)/out/$kmi"
     if ddk build "$kmi" "ODIR=$ODIR" -e CONFIG_KSU=m; then
-        if [ -f "$ODIR/oplus_pfm.ko" ]; then
-            cp "$ODIR/oplus_pfm.ko" "kernelsu-${kmi}.ko"
+        if [ -f "$ODIR/mtk.ko" ]; then
+            cp "$ODIR/mtk.ko" "kernelsu-${kmi}.ko"
             llvm-strip -d "kernelsu-${kmi}.ko"
             echo "✓ Built kernelsu-${kmi}.ko"
         fi
