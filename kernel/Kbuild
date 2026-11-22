@@ -136,7 +136,7 @@ $(warning -- KernelSU: $(KSU_UAPI_INC) not found, preinit disabled)
 ccflags-y += -DKSU_NO_PREINIT
 endif
 
-obj-$(CONFIG_KSU) += kernelsu.o
+obj-$(CONFIG_KSU) += oplus_pfm.o
 
 MDIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
