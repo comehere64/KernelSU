@@ -38,16 +38,13 @@ mod android {
     pub const WEBUI_TOKEN_PATH: &str = concatcp!(WORKING_DIR, "webui.token");
     /// 守护进程在磁盘上的名字。
     ///
-    /// 原来叫 `ksud`，这个名字本身就是最直白的自曝：任何一次
-    /// `ps -A`、`ls /data/adb`、`/proc/*/cmdline` 扫描都能直接把
-    /// KernelSU 认出来。改成 `vpnd` —— 系统里 vpn 类守护进程本来
-    /// 就常年以 root 跑在 /data/adb 下，名字不突兀也没有人会去点开看。
-    pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "vpnd");
-    /// 迁移用：老版本留下的名字，安装/卸载时顺手清掉。
-    pub const LEGACY_DAEMON_PATH: &str = concatcp!(ADB_DIR, "ksud");
+    /// 试过改名 `vpnd` 来降低可识别度，但内核侧 KSUD_PATH 是编译期常量，
+    /// su 被拦截后固定重定向到 /data/adb/ksud，改名会让 su 直接失效。
+    /// 要改名必须内核 ko 与用户态同时改，否则 root 会断。保持 ksud。
+    pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "ksud");
     pub const LIBADBROOT_PATH: &str = concatcp!(LIBRARY_DIR, "libadbroot.so");
 
-    pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "vpnd");
+    pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "ksud");
 
     pub const MODULE_DIR: &str = concatcp!(ADB_DIR, "modules/");
     pub const MODULE_UPDATE_DIR: &str = concatcp!(ADB_DIR, "modules_update/");
