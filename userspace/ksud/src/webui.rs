@@ -1009,7 +1009,8 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
     let classpath = format!("-Djava.class.path={}", dex_path);
     let output_dir = format!("{}/app_icons", crate::defs::WORKING_DIR);
     let _ = std::fs::create_dir_all(&output_dir);
-    let output_file = format!("{}/{}.png", output_dir, pkg_name.replace('/', "_"));
+    tighten_dir(&output_dir);
+    let output_file = format!("{}/{}", output_dir, icon_cache_name(pkg_name));
 
     let output = match std::process::Command::new("app_process")
         .args([
@@ -1056,10 +1057,31 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
     Some(result)
 }
 
+/// 图标缓存文件名。
+///
+/// 原来直接用 `<包名>.png`，等于把"这台机器装了哪些 App"以明文文件名落在磁盘上，
+/// 任何能列目录的进程都能一眼读走。这里换成包名的短哈希：内容不变，名字不再
+/// 透露任何信息，仅凭文件名无法反推安装列表。
+#[cfg(target_os = "android")]
+fn icon_cache_name(pkg_name: &str) -> String {
+    use std::hash::{Hasher, DefaultHasher};
+    let mut h = DefaultHasher::new();
+    h.write(pkg_name.as_bytes());
+    format!("{:016x}.png", h.finish())
+}
+
+/// 缓存目录一律收紧到 0700：只有 root 能进，别的 App 连目录都列不了。
+#[cfg(target_os = "android")]
+fn tighten_dir(dir: &str) {
+    use std::os::unix::fs::PermissionsExt;
+    let _ = std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700));
+}
+
 #[cfg(target_os = "android")]
 fn icon_from_disk(pkg_name: &str) -> Option<(String, String)> {
     let dir = format!("{}/app_icons", crate::defs::WORKING_DIR);
-    let png = std::path::Path::new(&dir).join(format!("{}.png", pkg_name.replace('/', "_")));
+    tighten_dir(&dir);
+    let png = std::path::Path::new(&dir).join(icon_cache_name(pkg_name));
     let png_time = std::fs::metadata(&png).and_then(|m| m.modified()).ok()?;
 
     if let Some(apk) = cached_apk_path(pkg_name)

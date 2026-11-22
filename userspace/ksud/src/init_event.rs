@@ -194,6 +194,13 @@ fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
 
     let logdir = Path::new(defs::LOG_DIR);
     utils::ensure_dir_exists(logdir)?;
+    // 启动日志里有 dmesg / logcat 原文，权限必须收紧：
+    // 原来这里只 ensure_dir_exists（不设 mode），目录按 umask 落地成 0777，
+    // 任何 App 都能列目录、读日志、甚至往里写。这里显式压到 0700。
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(logdir, std::fs::Permissions::from_mode(0o700));
+    }
     let bootlog = logdir.join(format!("{logname}.log"));
     let oldbootlog = logdir.join(format!("{logname}.old.log"));
 
@@ -202,6 +209,11 @@ fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
     }
 
     let bootlog = std::fs::File::create(bootlog)?;
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // 日志文件同样只给 root 读写。
+        let _ = bootlog.set_permissions(std::fs::Permissions::from_mode(0o600));
+    }
 
     let mut args = vec!["-s", "9", defs::BOOTLOG_TIMEOUT];
     args.extend_from_slice(command);
