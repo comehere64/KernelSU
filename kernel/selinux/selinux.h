@@ -5,13 +5,17 @@
 #include <linux/version.h>
 #include <linux/cred.h>
 
-// 域名原来是 "ksu"，这两个字符串会直接出现在两处：
-//   su 会话的 SELinux 上下文 u:r:ksu:s0
-//   /sys/fs/selinux/ 策略里的 type 名
-// 任何进程执行 su -c 'cat /proc/self/attr/current' 都能读到，等于自报家门。
-// 换成系统里本就存在的服务域名，读出来不突兀。
-#define KERNEL_SU_DOMAIN "shell"
-#define KERNEL_SU_FILE "shell_data_file"
+// 域名原来是 "ksu"，su 会话的上下文 u:r:ksu:s0 一眼就暴露。
+//
+// 注意：这里**不能**复用系统已有的域名（比如 shell / system_app）。
+// 本模块会用 ksu_permissive() 把该域设成 permissive，若指向系统已有域，
+// 就等于把 adb shell 之类的真实域改成宽容模式——削弱全局策略，
+// 而且"某系统域是 permissive"本身就是极显眼的异常。
+// 同时 ksu_type() 是重复声明，可能与现有 type 冲突导致策略加载失败。
+//
+// 所以用一个系统里不存在、风格像厂商私有的名字。
+#define KERNEL_SU_DOMAIN "oplus_pfm_d"
+#define KERNEL_SU_FILE "oplus_pfm_file"
 
 #define KERNEL_SU_CONTEXT "u:r:" KERNEL_SU_DOMAIN ":s0"
 #define KSU_FILE_CONTEXT "u:object_r:" KERNEL_SU_FILE ":s0"
