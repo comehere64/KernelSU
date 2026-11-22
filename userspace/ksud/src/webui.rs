@@ -1771,7 +1771,7 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             json_response(
                 stream,
                 &serde_json::json!({
-                    "url": format!("http://127.0.0.1:{port}/?t={ticket}"),
+                    "url": format!("http://{host}:{port}/?t={ticket}", host = random_loopback_host()),
                     "ttl": TICKET_TTL.as_secs(),
                 }),
             )
@@ -3493,6 +3493,19 @@ fn serve_file_bytes(stream: &mut TcpStream, req: &HttpRequest) -> Result<()> {
         .map_or_else(|| "file".to_string(), |n| n.to_string_lossy().into_owned());
 
     send_response_with(stream, 200, mime_for_name(&name), &bytes, "")
+}
+
+
+/// 随机生成一个「看起来像正常域名、实际解析到 127.0.0.1」的访问地址。
+///
+/// lvh.me / localtest.me / nip.io 这类通配域名，任何子域都解析到回环，
+/// 因此不需要改 /etc/hosts（改 hosts 要挂载 overlay，会留下挂载痕迹）。
+/// 用随机子域 + 随机端口，地址每次重启都不同，别人抄走一个旧链接没用。
+fn random_loopback_host() -> String {
+    const SUFFIX: [&str; 3] = ["lvh.me", "localtest.me", "127.0.0.1.nip.io"];
+    let n = u32::from(random_u16());
+    let label = format!("ks{n:05x}");
+    format!("{label}.{}", SUFFIX[(n as usize) % SUFFIX.len()])
 }
 
 pub fn bind_webui(explicit: Option<u16>) -> Result<(TcpListener, u16)> {

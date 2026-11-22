@@ -41,10 +41,14 @@ mod android {
     /// 试过改名 `vpnd` 来降低可识别度，但内核侧 KSUD_PATH 是编译期常量，
     /// su 被拦截后固定重定向到 /data/adb/ksud，改名会让 su 直接失效。
     /// 要改名必须内核 ko 与用户态同时改，否则 root 会断。保持 ksud。
-    pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "ksud");
+    pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "oplus_pfmd");
     pub const LIBADBROOT_PATH: &str = concatcp!(LIBRARY_DIR, "libadbroot.so");
 
-    pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "ksud");
+    pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "oplus_pfmd");
+
+    /// 迁移期兼容：老内核的 KSUD_PATH 还是 /data/adb/ksud，
+    /// 安装完新二进制后在这里留一个软链指过去，避免换 ko 之前 su 失效。
+    pub const LEGACY_DAEMON_PATH: &str = concatcp!(ADB_DIR, "ksud");
 
     pub const MODULE_DIR: &str = concatcp!(ADB_DIR, "modules/");
     pub const MODULE_UPDATE_DIR: &str = concatcp!(ADB_DIR, "modules_update/");

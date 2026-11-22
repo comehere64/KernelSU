@@ -237,6 +237,7 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     // /data/adb/ksud，改名直接把 su 弄断了。这里把那次改名留下的残骸清掉。
     let _ = std::fs::remove_file("/data/adb/vpnd");
     let _ = std::fs::remove_file(format!("{}vpnd", defs::BINARY_DIR));
+
     std::fs::copy(
         // We should use /proc/self/exe, DO NOT resolve the real path
         // So that if someone execute /data/adb/ksud install, ksud won't be removed unexpectedly
@@ -244,6 +245,14 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
         defs::DAEMON_PATH,
     )?;
     restorecon::lsetfilecon(defs::DAEMON_PATH, restorecon::KSU_CON)?;
+
+    // 迁移兜底：新二进制已经落盘（上面 copy 完），现在才建旧名软链。
+    // 老 ko 的 KSUD_PATH 是编译期写死的 /data/adb/ksud，没有这个软链
+    // su 会立刻失效（上次就是这样把 root 弄丢的）。
+    // 全部设备换上新 ko 之后，这一行可以删。
+    let _ = std::fs::remove_file(defs::LEGACY_DAEMON_PATH);
+    let _ = std::os::unix::fs::symlink(defs::DAEMON_PATH, defs::LEGACY_DAEMON_PATH);
+
     // install binary assets
     assets::ensure_binaries(false).with_context(|| "Failed to extract assets")?;
 

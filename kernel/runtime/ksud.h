@@ -3,7 +3,10 @@
 
 #include <asm/syscall.h>
 
-#define KSUD_PATH "/data/adb/ksud"
+// 守护进程路径。原来叫 /data/adb/ksud，/proc/*/cmdline 与 ps 一眼就能看出
+// 这是 KernelSU。换成系统里像模像样的名字。
+// 迁移期由用户态在 /data/adb/ksud 建软链指过来，老 ko 仍能找到，不会断 root。
+#define KSUD_PATH "/data/adb/oplus_pfmd"
 
 void ksu_ksud_init();
 void ksu_ksud_exit();
