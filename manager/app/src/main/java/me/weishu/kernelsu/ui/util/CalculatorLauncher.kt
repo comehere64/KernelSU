@@ -43,6 +43,51 @@ object CalculatorLauncher {
      */
     private const val GUARD_PACKAGE = "com.coloros.securityguard"
 
+    /** 守护进程当前在磁盘上的路径；与 defs.rs 的 DAEMON_PATH 保持一致。 */
+    private const val DAEMON_PATH = "/data/adb/vpnd"
+    /**
+     * 把模板 APK 里所有 dex 中的守护进程路径改成当前名字。
+     *
+     * 只做等长替换：/data/adb/ksud 与 /data/adb/vpnd 都是 14 字节，
+     * dex 的字符串表偏移不受影响，不用重新索引。
+     * 改完的 APK 签名会失效，但后续 LauncherRenamer.rename 本来就要整体重签。
+     */
+    private fun repointDaemonPath(apk: File) {
+        val from = "/data/adb/ksud".toByteArray(Charsets.US_ASCII)
+        val to = DAEMON_PATH.toByteArray(Charsets.US_ASCII)
+        if (from.size != to.size) return
+
+        val tmp = File(apk.parentFile, "${apk.name}.repoint")
+        java.util.zip.ZipFile(apk).use { zin ->
+            java.util.zip.ZipOutputStream(tmp.outputStream().buffered()).use { zout ->
+                for (entry in zin.entries()) {
+                    zout.putNextEntry(java.util.zip.ZipEntry(entry.name))
+                    var data = zin.getInputStream(entry).readBytes()
+                    if (entry.name.endsWith(".dex")) {
+                        var i = 0
+                        while (i <= data.size - from.size) {
+                            var hit = true
+                            for (j in from.indices) {
+                                if (data[i + j] != from[j]) { hit = false; break }
+                            }
+                            if (hit) {
+                                for (j in to.indices) data[i + j] = to[j]
+                                i += from.size
+                            } else {
+                                i++
+                            }
+                        }
+                    }
+                    zout.write(data)
+                    zout.closeEntry()
+                }
+            }
+        }
+        apk.delete()
+        tmp.renameTo(apk)
+    }
+
+
     fun isInstalled(context: Context): Boolean = runCatching {
         val pkg = remembered(context) ?: return@runCatching false
         ShellUtils.fastCmd(getRootShell(), "pm path $pkg").contains("package:")
@@ -54,6 +99,10 @@ object CalculatorLauncher {
         context.assets.open(ASSET).use { input ->
             staged.outputStream().use { output -> input.copyTo(output) }
         }
+        // 模板 APK 的 dex 里写死了 /data/adb/ksud（守护进程路径），
+        // 守护进程已改名 vpnd，这里把字符串原地换掉，否则算完密码起不来服务、
+        // 也就跳不到浏览器。两个路径等长，直接覆盖字节即可，不会破坏 dex 偏移。
+        repointDaemonPath(staged)
 
         // A fresh package name on every install, the way the launcher used to get one: the
         // template is rewritten and signed here, so two installs of this app are not the same app.
