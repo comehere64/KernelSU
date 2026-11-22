@@ -5,8 +5,13 @@
 #include <linux/version.h>
 #include <linux/cred.h>
 
-#define KERNEL_SU_DOMAIN "ksu"
-#define KERNEL_SU_FILE "ksu_file"
+// 域名原来是 "ksu"，这两个字符串会直接出现在两处：
+//   su 会话的 SELinux 上下文 u:r:ksu:s0
+//   /sys/fs/selinux/ 策略里的 type 名
+// 任何进程执行 su -c 'cat /proc/self/attr/current' 都能读到，等于自报家门。
+// 换成系统里本就存在的服务域名，读出来不突兀。
+#define KERNEL_SU_DOMAIN "shell"
+#define KERNEL_SU_FILE "shell_data_file"
 
 #define KERNEL_SU_CONTEXT "u:r:" KERNEL_SU_DOMAIN ":s0"
 #define KSU_FILE_CONTEXT "u:object_r:" KERNEL_SU_FILE ":s0"

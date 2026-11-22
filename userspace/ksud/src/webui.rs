@@ -873,6 +873,21 @@ fn label_from_apk_path(apk_path: &str) -> Option<String> {
     (!label.is_empty()).then_some(label)
 }
 
+
+/// 把 assets 里的 dex 落到 BINARY_DIR，返回路径。
+///
+/// 原来这段「解包 + create_dir_all + write」在图标和标签两处各抄了一遍，
+/// 改一处漏一处过。收成一个函数。
+#[cfg(target_os = "android")]
+fn materialize_dex(name: &str) -> Option<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(format!("{}/{}", crate::defs::BINARY_DIR, name));
+    if let Ok(data) = crate::assets::get_asset_data(name) {
+        let _ = std::fs::create_dir_all(crate::defs::BINARY_DIR);
+        let _ = std::fs::write(&path, &data);
+    }
+    path.exists().then_some(path)
+}
+
 #[cfg(target_os = "android")]
 fn get_app_labels_from_dex() -> std::collections::HashMap<String, String> {
     let mut map = std::collections::HashMap::new();
@@ -937,14 +952,8 @@ fn apk_icon(path: &str) -> anyhow::Result<Vec<u8>> {
         }
     }
 
-    let dex_path = format!("{}/appicon.dex", crate::defs::BINARY_DIR);
-    if let Ok(data) = crate::assets::get_asset_data("appicon.dex") {
-        let _ = std::fs::create_dir_all(crate::defs::BINARY_DIR);
-        let _ = std::fs::write(&dex_path, &data);
-    }
-    if !std::path::Path::new(&dex_path).exists() {
-        anyhow::bail!("缺少 appicon.dex");
-    }
+    let dex = materialize_dex("appicon.dex").ok_or_else(|| anyhow::anyhow!("缺少 appicon.dex"))?;
+    let dex_path = dex.to_string_lossy().to_string();
     std::fs::create_dir_all(&dir)?;
 
     let output = std::process::Command::new("app_process")

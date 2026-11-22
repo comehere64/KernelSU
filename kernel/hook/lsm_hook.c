@@ -343,7 +343,9 @@ int ksu_lsm_hook(struct ksu_lsm_hook *hook)
                     hook->list.head = head;
                     hook->list.list.next = NULL;
                     hook->list.list.pprev = &head->first;
-                    hook->list.lsm = "ksu";
+                    // LSM 名会出现在 /sys/kernel/security/lsm 里，原来叫 "ksu" 等于挂个牌子。
+                    // 改成系统里已有的 lsm 名风格。
+                    hook->list.lsm = "selinux";
                     *(void **)((char *)selected_entry + hook->hook_offset) = hook->replacement;
                     selected_slot = (void **)&head->first;
                     selected_origin = NULL;
