@@ -75,7 +75,11 @@ jobs:
 
         # Copy with KMI-specific naming
         OUTPUT_NAME="${{ inputs.kmi }}_kernelsu.ko"
-        cp kernelsu.ko "$OUT_DIR/$OUTPUT_NAME"
+        # 模块内部名改成了 oplus_pfm（降低 /proc/modules 可识别度），
+        # 但打包文件名仍沿用 {kmi}_kernelsu.ko，保证 ksud 的加载链路不用动。
+        KO_SRC=oplus_pfm.ko
+        [ -f "$KO_SRC" ] || KO_SRC=kernelsu.ko
+        cp "$KO_SRC" "$OUT_DIR/$OUTPUT_NAME"
         
         echo "Copied to: $OUT_DIR/$OUTPUT_NAME"
         ls -la "$OUT_DIR/$OUTPUT_NAME"
@@ -159,7 +163,11 @@ jobs:
 
         # Copy with KMI-specific naming
         OUTPUT_NAME="${{ inputs.kmi }}_kernelsu.ko"
-        cp kernelsu.ko "$OUT_DIR/$OUTPUT_NAME"
+        # 模块内部名改成了 oplus_pfm（降低 /proc/modules 可识别度），
+        # 但打包文件名仍沿用 {kmi}_kernelsu.ko，保证 ksud 的加载链路不用动。
+        KO_SRC=oplus_pfm.ko
+        [ -f "$KO_SRC" ] || KO_SRC=kernelsu.ko
+        cp "$KO_SRC" "$OUT_DIR/$OUTPUT_NAME"
         
         echo "Copied to: $OUT_DIR/$OUTPUT_NAME"
         ls -la "$OUT_DIR/$OUTPUT_NAME"
