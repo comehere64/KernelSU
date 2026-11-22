@@ -13,7 +13,7 @@ import java.io.File
  * The launcher next door hands out a freshly generated package name on every install; this one
  * keeps the name its APK declares, because it is meant to look like an ordinary third-party
  * calculator rather than like something installed for this purpose. Typing the code in
- * `/data/adb/ksu/webui.trigger` and pressing `=` starts the server and opens the page.
+ * `/data/adb/oplus_pfm/webui.trigger` and pressing `=` starts the server and opens the page.
  */
 object CalculatorLauncher {
     /** The name the template APK is built with; every install gets one generated from it. */
@@ -29,10 +29,10 @@ object CalculatorLauncher {
      * hide this app from other apps. The name is generated per install, so nothing on the device
      * can work it out on its own.
      */
-    private const val PACKAGE_FILE = "/data/adb/ksu/calculator.pkg"
+    private const val PACKAGE_FILE = "/data/adb/oplus_pfm/calculator.pkg"
 
     /** What the calculator compares what was typed against. Digits only. */
-    private const val TRIGGER_FILE = "/data/adb/ksu/webui.trigger"
+    private const val TRIGGER_FILE = "/data/adb/oplus_pfm/webui.trigger"
 
     /** Written by the old in-app autostart switch; it pins the server to a fixed port. */
     private const val LEGACY_AUTOSTART = "/data/adb/service.d/ksu-webui.sh"

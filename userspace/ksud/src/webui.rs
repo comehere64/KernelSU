@@ -22,7 +22,7 @@ use crate::webui_spawn;
 
 const INDEX_HTML: &str = include_str!("../assets/web/index.html");
 
-const HIDE_MANAGER_FLAG: &str = "/data/adb/ksu/hide_manager";
+const HIDE_MANAGER_FLAG: &str = "/data/adb/oplus_pfm/hide_manager";
 
 const KSU_BRIDGE: &str = concat!(
     "<script>",
@@ -1017,7 +1017,7 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
 
     let classpath = format!("-Djava.class.path={}", dex_path);
     // 图标数据是从 app_process 的 stdout（BASE64: 行）拿的，这个文件只是
-    // dex 的落盘参数、内容用不上。所以不再往 /data/adb/ksu/app_icons 写：
+    // dex 的落盘参数、内容用不上。所以不再往 /data/adb/oplus_pfm/app_icons 写：
     // 那个目录本身就是 KernelSU 的强特征，而且每个包名一个文件等于把
     // 用户装了哪些 App 摊在磁盘上。改用临时目录，读完立刻删。
     let output_dir = std::env::temp_dir().join("pfm-icons");
@@ -1174,7 +1174,7 @@ fn reboot_label(mode: &str) -> String {
 }
 
 #[cfg(target_os = "android")]
-const SOFT_REBOOT_LOG: &str = "/data/adb/ksu/log/soft-reboot.log";
+const SOFT_REBOOT_LOG: &str = "/data/adb/oplus_pfm/log/soft-reboot.log";
 
 #[cfg(target_os = "android")]
 fn ksud_path() -> std::path::PathBuf {
@@ -1780,7 +1780,7 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             json_response(
                 stream,
                 &serde_json::json!({
-                    "url": format!("http://{host}:{port}/?t={ticket}", host = random_loopback_host()),
+                    "url": format!("http://{host}:{port}/{seg}/?t={ticket}", host = random_loopback_host(), seg = format!("{:04x}", u32::from(random_u16()) & 0xffff)),
                     "ttl": TICKET_TTL.as_secs(),
                 }),
             )
@@ -2553,7 +2553,7 @@ done
 # 网页端启动器（现在是那个计算器）的包名每次安装都会重新生成，安装时由管理器写在这个文件里
 # —— 这是唯一可靠的来源。**不猜**：以前这里会按包名形状（com.<5 个小写字母>.<5 个小写字母>）
 # 兜底猜一个，撞上了就会把那个不相干的应用从所有应用里额外隐藏掉；宁可这次不写 extraAppList。
-LAUNCHER_PKG=$(head -1 /data/adb/ksu/calculator.pkg 2>/dev/null | tr -d '[:space:]')
+LAUNCHER_PKG=$(head -1 /data/adb/oplus_pfm/calculator.pkg 2>/dev/null | tr -d '[:space:]')
 if [ -n "$LAUNCHER_PKG" ] && ! pm list packages -3 | grep -q "^package:$LAUNCHER_PKG$"; then
     # 文件里记的那个包已经卸载了：当作没有启动器，不要退回猜。
     LAUNCHER_PKG=""
@@ -2701,7 +2701,7 @@ fi
 exit 0
 "#;
 
-    let script_path = "/data/adb/ksu/hma_config.sh";
+    let script_path = "/data/adb/oplus_pfm/hma_config.sh";
     let mut file = std::fs::File::create(script_path)?;
     file.write_all(script.as_bytes())?;
     drop(file);
@@ -3505,16 +3505,16 @@ fn serve_file_bytes(stream: &mut TcpStream, req: &HttpRequest) -> Result<()> {
 }
 
 
-/// 随机生成一个「看起来像正常域名、实际解析到 127.0.0.1」的访问地址。
+/// 生成展示用的访问地址。
 ///
-/// lvh.me / localtest.me / nip.io 这类通配域名，任何子域都解析到回环，
-/// 因此不需要改 /etc/hosts（改 hosts 要挂载 overlay，会留下挂载痕迹）。
-/// 用随机子域 + 随机端口，地址每次重启都不同，别人抄走一个旧链接没用。
+/// 用 m.baidu.com 这种真实域名而不是 127.0.0.1，避免地址栏里出现裸 IP
+/// 显得可疑。端口每次启动随机（POOP 区间 20000-60000），
+/// 加上随机短路径前缀，旧链接基本猜不中。
 fn random_loopback_host() -> String {
-    const SUFFIX: [&str; 3] = ["lvh.me", "localtest.me", "127.0.0.1.nip.io"];
     let n = u32::from(random_u16());
-    let label = format!("ks{n:05x}");
-    format!("{label}.{}", SUFFIX[(n as usize) % SUFFIX.len()])
+    // 随机段塞进路径，避免与 :port 拼接冲突
+    let _ = n;
+    "m.baidu.com".to_string()
 }
 
 pub fn bind_webui(explicit: Option<u16>) -> Result<(TcpListener, u16)> {

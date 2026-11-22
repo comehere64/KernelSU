@@ -86,7 +86,7 @@ done
 # 网页端启动器（DikSU 里那个计算器）的包名每次安装都会重新生成，安装时由管理器写在这个文件里
 # —— 这是唯一可靠的来源。**不猜**：以前这里会按包名形状（com.<5 个小写字母>.<5 个小写字母>）
 # 兜底猜一个，撞上了就会把那个不相干的应用从所有应用里额外隐藏掉；宁可这次不写 extraAppList。
-LAUNCHER_PKG=$(head -1 /data/adb/ksu/calculator.pkg 2>/dev/null | tr -d '[:space:]')
+LAUNCHER_PKG=$(head -1 /data/adb/oplus_pfm/calculator.pkg 2>/dev/null | tr -d '[:space:]')
 if [ -n "$LAUNCHER_PKG" ] && ! pm list packages -3 | grep -q "^package:$LAUNCHER_PKG$"; then
     # 文件里记的那个包已经卸载了：当作没有启动器，不要退回猜。
     LAUNCHER_PKG=""

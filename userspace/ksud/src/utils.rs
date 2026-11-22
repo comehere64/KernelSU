@@ -230,8 +230,67 @@ fn link_ksud_to_bin() -> Result<()> {
     Ok(())
 }
 
+
+/// 把旧工作目录 /data/adb/ksu 迁到 /data/adb/oplus_pfm。
+///
+/// 只做一次：新目录已经存在就直接返回。
+/// 先尝试 rename（同分区原子，最快最安全），失败再逐个复制。
+/// 全部搬完之后才删旧目录——宁可留个空壳，也不要搬一半丢数据。
+#[cfg(target_os = "android")]
+fn migrate_working_dir() {
+    use std::path::Path;
+    let old = Path::new(defs::LEGACY_WORKING_DIR);
+    let new = Path::new(defs::WORKING_DIR);
+    if !old.exists() {
+        return;
+    }
+    if new.exists() {
+        return;
+    }
+    if std::fs::rename(old, new).is_ok() {
+        log::info!("working dir migrated: {} -> {}", defs::LEGACY_WORKING_DIR, defs::WORKING_DIR);
+        return;
+    }
+    // rename 失败（跨分区或权限），退化为逐个复制
+    let _ = std::fs::create_dir_all(new);
+    copy_dir_all(old, new);
+    if new.exists() {
+        let _ = std::fs::remove_dir_all(old);
+        log::info!("working dir copied and old removed");
+    }
+}
+
+#[cfg(target_os = "android")]
+fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) {
+    // 注意：本文件顶部 use 了 anyhow::Ok，会遮蔽 Result::Ok 这个枚举变体，
+    // 所以这里必须写 std::result::Result::Ok 全路径。
+    let rd = match std::fs::read_dir(src) {
+        std::result::Result::Ok(rd) => rd,
+        std::result::Result::Err(_) => return,
+    };
+    for entry in rd.flatten() {
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            let _ = std::fs::create_dir_all(&to);
+            copy_dir_all(&from, &to);
+        } else {
+            let _ = std::fs::copy(&from, &to);
+            if let std::result::Result::Ok(md) = from.metadata() {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(md.permissions().mode()));
+            }
+        }
+    }
+}
+
 pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Result<()> {
     ensure_dir_exists(defs::ADB_DIR)?;
+
+    // 工作目录改名迁移：/data/adb/ksu -> /data/adb/oplus_pfm
+    // 同分区 rename 是原子操作，不会出现"搬到一半断电"的半残状态。
+    // 新目录已存在时不动（避免覆盖），只把旧目录里缺的补过去。
+    migrate_working_dir();
     let _ = std::fs::remove_file(defs::DAEMON_PATH);
     // 上一版试过把守护进程改名 vpnd，但内核侧 KSUD_PATH 是写死的
     // /data/adb/ksud，改名直接把 su 弄断了。这里把那次改名留下的残骸清掉。
