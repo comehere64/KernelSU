@@ -1,10 +1,10 @@
 [workspace]
 members = [
-    "userspace/ksud",
+    "userspace/mtkd",
     "userspace/ksuinit",
 ]
 default-members = [
-    "userspace/ksud",
+    "userspace/mtkd",
     "userspace/ksuinit",
 ]
 resolver = "3"

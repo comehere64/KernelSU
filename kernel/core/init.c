@@ -15,7 +15,7 @@
 #include "manager/throne_tracker.h"
 #include "hook/syscall_hook_manager.h"
 #include "hook/lsm_hook.h"
-#include "runtime/ksud.h"
+#include "runtime/mtkd.h"
 #include "runtime/ksud_boot.h"
 #include "feature/sulog.h"
 #include "supercall/supercall.h"

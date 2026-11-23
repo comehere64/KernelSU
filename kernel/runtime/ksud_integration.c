@@ -23,7 +23,7 @@
 #include "arch.h"
 #include "klog.h" // IWYU pragma: keep
 #include "ksu.h"
-#include "runtime/ksud.h"
+#include "runtime/mtkd.h"
 #include "runtime/ksud_boot.h"
 #include "policy/feature.h"
 #include "selinux/selinux.h"

@@ -19,7 +19,7 @@
 #include "policy/allowlist.h"
 #include "policy/feature.h"
 #include "klog.h" // IWYU pragma: keep
-#include "runtime/ksud.h"
+#include "runtime/mtkd.h"
 #include "feature/sucompat.h"
 #include "policy/app_profile.h"
 #include "hook/syscall_hook.h"

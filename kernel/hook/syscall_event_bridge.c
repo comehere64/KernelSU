@@ -14,7 +14,7 @@
 #include "feature/sucompat.h"
 #include "hook/setuid_hook.h"
 #include "policy/app_profile.h"
-#include "runtime/ksud.h"
+#include "runtime/mtkd.h"
 #include "sulog/event.h"
 #include "hook/syscall_hook.h"
 #include "hook/syscall_event_bridge.h"
