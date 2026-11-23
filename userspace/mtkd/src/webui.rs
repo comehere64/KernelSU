@@ -3795,8 +3795,15 @@ pub fn serve(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
         ("/data/adb/mtk/calculator.pkg", defs::CALCULATOR_PKG_PATH),
     ] {
         let lp = std::path::Path::new(link);
-        if lp.symlink_metadata().is_err() {
-            let _ = std::os::unix::fs::symlink(target, lp);
+        let want = std::path::Path::new(target);
+        let good = match std::fs::read_link(lp) {
+            Ok(t) => t == want,
+            Err(_) => false,
+        };
+        if !good {
+            // 上一版留下的普通文件（或指错方向的旧软链）会让计算器读到过期内容，先清掉
+            let _ = std::fs::remove_file(lp);
+            let _ = std::os::unix::fs::symlink(want, lp);
         }
     }
     serve_with(listener, idle_timeout, false, None)
