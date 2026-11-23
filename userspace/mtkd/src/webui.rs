@@ -3783,7 +3783,12 @@ fn watch_connection(stream: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
-pub fn serve(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
+/// 建好 state/ 目录，并在旧路径挂反向软链指向 state/ 下的真文件。
+///
+/// 计算器 dex 与 Kotlin 侧写死了 /data/adb/mtk/webui.*，不能改，
+/// 所以由 daemon 负责把旧名桥接过去。两个入口（常驻 / --watch）都必须先跑这段，
+/// 否则 state/ 不存在、webui.port 没人生成，启动器会报「确认已授予root 权限」。
+fn ensure_state_layout() {
     // 端口/token/触发标记/计算器包名都收在 state/ 下
     let _ = std::fs::create_dir_all(defs::STATE_DIR);
     // 计算器 dex 与 Kotlin 侧仍按老路径读，这里补反向软链指进 state/，
@@ -3806,10 +3811,15 @@ pub fn serve(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
             let _ = std::os::unix::fs::symlink(want, lp);
         }
     }
+}
+
+pub fn serve(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
+    ensure_state_layout();
     serve_with(listener, idle_timeout, false, None)
 }
 
 pub fn serve_watched(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
+    ensure_state_layout();
     serve_with(listener, idle_timeout, true, None)
 }
 
