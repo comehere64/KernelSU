@@ -930,23 +930,173 @@ static APP_ICON_CACHE: std::sync::Mutex<
 
 /// 图标库密钥：由工作目录派生，避免明文密钥硬编码。
 #[cfg(target_os = "android")]
-fn icon_db_key() -> String {
-    sha256::digest(format!("pfm-icon-db-v1:{}", crate::defs::WORKING_DIR))
+fn icon_store_key() -> [u8; 32] {
+    let hex = sha256::digest(format!("pfm-icon-db-v1:{}", crate::defs::WORKING_DIR));
+    let b = hex.as_bytes();
+    let mut k = [0u8; 32];
+    for i in 0..32 {
+        k[i] = b[i * 2];
+    }
+    k
 }
 
-/// 打开（必要时创建）图标库。整库 SQLCipher 加密，表 icons(pkg,data,ts)。
 #[cfg(target_os = "android")]
-fn icons_db() -> Option<rusqlite::Connection> {
+fn chacha20_block(key: &[u8; 32], counter: u32, nonce: &[u8; 12]) -> [u8; 64] {
+    fn qr(x: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize) {
+        x[a] = x[a].wrapping_add(x[b]);
+        x[d] = (x[d] ^ x[a]).rotate_left(16);
+        x[c] = x[c].wrapping_add(x[d]);
+        x[b] = (x[b] ^ x[c]).rotate_left(12);
+        x[a] = x[a].wrapping_add(x[b]);
+        x[d] = (x[d] ^ x[a]).rotate_left(8);
+        x[c] = x[c].wrapping_add(x[d]);
+        x[b] = (x[b] ^ x[c]).rotate_left(7);
+    }
+
+    let mut st = [0u32; 16];
+    st[0] = 0x61707865;
+    st[1] = 0x3320646e;
+    st[2] = 0x79622d32;
+    st[3] = 0x6b206574;
+    for i in 0..8 {
+        st[4 + i] = u32::from_le_bytes([key[i * 4], key[i * 4 + 1], key[i * 4 + 2], key[i * 4 + 3]]);
+    }
+    st[12] = counter;
+    for i in 0..3 {
+        st[13 + i] = u32::from_le_bytes([
+            nonce[i * 4],
+            nonce[i * 4 + 1],
+            nonce[i * 4 + 2],
+            nonce[i * 4 + 3],
+        ]);
+    }
+
+    let mut w = st;
+    for _ in 0..10 {
+        qr(&mut w, 0, 4, 8, 12);
+        qr(&mut w, 1, 5, 9, 13);
+        qr(&mut w, 2, 6, 10, 14);
+        qr(&mut w, 3, 7, 11, 15);
+        qr(&mut w, 0, 5, 10, 15);
+        qr(&mut w, 1, 6, 11, 12);
+        qr(&mut w, 2, 7, 8, 13);
+        qr(&mut w, 3, 4, 9, 14);
+    }
+
+    let mut out = [0u8; 64];
+    for i in 0..16 {
+        out[i * 4..i * 4 + 4].copy_from_slice(&w[i].wrapping_add(st[i]).to_le_bytes());
+    }
+    out
+}
+
+#[cfg(target_os = "android")]
+fn chacha20_xor(key: &[u8; 32], nonce: &[u8; 12], data: &[u8]) -> Vec<u8> {
+    let mut out = data.to_vec();
+    let mut counter = 1u32;
+    for chunk in out.chunks_mut(64) {
+        let ks = chacha20_block(key, counter, nonce);
+        for (i, b) in chunk.iter_mut().enumerate() {
+            *b ^= ks[i];
+        }
+        counter = counter.wrapping_add(1);
+    }
+    out
+}
+
+#[cfg(target_os = "android")]
+fn icon_nonce() -> [u8; 12] {
+    let mut n = [0u8; 12];
+    if let Ok(mut f) = std::fs::File::open("/dev/urandom") {
+        use std::io::Read;
+        let _ = f.read_exact(&mut n);
+    }
+    if n == [0u8; 12] {
+        let t = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        n[..8].copy_from_slice(&(t as u64).to_le_bytes());
+    }
+    n
+}
+
+/// 读整库，返回 pkg -> (data, ts)。
+#[cfg(target_os = "android")]
+fn icon_store_load() -> std::collections::HashMap<String, (Vec<u8>, i64)> {
+    let mut map = std::collections::HashMap::new();
+    let Ok(raw) = std::fs::read(crate::defs::ICON_DB_PATH) else {
+        return map;
+    };
+    if raw.len() < 17 || &raw[..4] != b"PFMI" {
+        return map;
+    }
+    let mut nonce = [0u8; 12];
+    nonce.copy_from_slice(&raw[5..17]);
+    let plain = chacha20_xor(&icon_store_key(), &nonce, &raw[17..]);
+
+    let mut i = 0usize;
+    let take = |i: &mut usize, n: usize| -> Option<&[u8]> {
+        if *i + n > plain.len() {
+            return None;
+        }
+        let s = &plain[*i..*i + n];
+        *i += n;
+        Some(s)
+    };
+    let Some(cb) = take(&mut i, 4) else { return map };
+    let count = u32::from_le_bytes([cb[0], cb[1], cb[2], cb[3]]) as usize;
+    for _ in 0..count {
+        let Some(kb) = take(&mut i, 2) else { break };
+        let klen = u16::from_le_bytes([kb[0], kb[1]]) as usize;
+        let Some(k) = take(&mut i, klen) else { break };
+        let Ok(key) = std::str::from_utf8(k) else { break };
+        let Some(tb) = take(&mut i, 8) else { break };
+        let mut t8 = [0u8; 8];
+        t8.copy_from_slice(tb);
+        let ts = i64::from_le_bytes(t8);
+        let Some(db) = take(&mut i, 4) else { break };
+        let dlen = u32::from_le_bytes([db[0], db[1], db[2], db[3]]) as usize;
+        let Some(d) = take(&mut i, dlen) else { break };
+        map.insert(key.to_string(), (d.to_vec(), ts));
+    }
+    map
+}
+
+#[cfg(target_os = "android")]
+fn icon_store_save(map: &std::collections::HashMap<String, (Vec<u8>, i64)>) {
+    let mut plain = Vec::new();
+    plain.extend_from_slice(&(map.len() as u32).to_le_bytes());
+    for (k, (d, ts)) in map {
+        let kb = k.as_bytes();
+        if kb.len() > u16::MAX as usize {
+            continue;
+        }
+        plain.extend_from_slice(&(kb.len() as u16).to_le_bytes());
+        plain.extend_from_slice(kb);
+        plain.extend_from_slice(&ts.to_le_bytes());
+        plain.extend_from_slice(&(d.len() as u32).to_le_bytes());
+        plain.extend_from_slice(d);
+    }
+
+    let nonce = icon_nonce();
+    let cipher = chacha20_xor(&icon_store_key(), &nonce, &plain);
+
+    let mut out = Vec::with_capacity(17 + cipher.len());
+    out.extend_from_slice(b"PFMI");
+    out.push(1);
+    out.extend_from_slice(&nonce);
+    out.extend_from_slice(&cipher);
+
     if let Some(dir) = std::path::Path::new(crate::defs::ICON_DB_PATH).parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let conn = rusqlite::Connection::open(crate::defs::ICON_DB_PATH).ok()?;
-    conn.pragma_update(None, "key", icon_db_key()).ok()?;
-    conn.execute_batch(
-        "CREATE TABLE IF NOT EXISTS icons(pkg TEXT PRIMARY KEY, data BLOB, ts INTEGER);",
-    )
-    .ok()?;
-    Some(conn)
+    let _ = std::fs::write(crate::defs::ICON_DB_PATH, &out);
+}
+
+#[cfg(target_os = "android")]
+fn icon_db_get_with_ts(key: &str) -> Option<(Vec<u8>, i64)> {
+    icon_store_load().get(key).cloned()
 }
 
 #[cfg(target_os = "android")]
@@ -955,29 +1105,14 @@ fn icon_db_get(key: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(target_os = "android")]
-fn icon_db_get_with_ts(key: &str) -> Option<(Vec<u8>, i64)> {
-    let conn = icons_db()?;
-    let mut stmt = conn
-        .prepare("SELECT data, ts FROM icons WHERE pkg = ?1")
-        .ok()?;
-    stmt.query_row([key], |row| {
-        Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, i64>(1)?))
-    })
-    .ok()
-}
-
-#[cfg(target_os = "android")]
 fn icon_db_put(key: &str, bytes: &[u8]) {
-    let Some(conn) = icons_db() else { return };
     let ts = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    let _ = conn.execute(
-        "INSERT INTO icons(pkg,data,ts) VALUES(?1,?2,?3)
-         ON CONFLICT(pkg) DO UPDATE SET data=excluded.data, ts=excluded.ts",
-        rusqlite::params![key, bytes, ts],
-    );
+    let mut map = icon_store_load();
+    map.insert(key.to_string(), (bytes.to_vec(), ts));
+    icon_store_save(&map);
 }
 
 #[cfg(target_os = "android")]
