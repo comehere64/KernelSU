@@ -47,16 +47,15 @@ mod android {
     pub const WEBUI_TOKEN_PATH: &str = concatcp!(WORKING_DIR, "webui.token");
     /// 守护进程在磁盘上的名字。
     ///
-    /// 试过改名 `vpnd` 来降低可识别度，但内核侧 KSUD_PATH 是编译期常量，
-    /// su 被拦截后固定重定向到 /data/adb/ksud，改名会让 su 直接失效。
-    /// 要改名必须内核 ko 与用户态同时改，否则 root 会断。保持 ksud。
+    /// 内核侧 KSUD_PATH 是编译期常量，su 被拦截后固定重定向到这里，
+    /// 所以内核 ko 与用户态必须同时改，否则 root 会断。
+    /// 现已统一为 mtkd（见 kernel/runtime/ksud.h 的 KSUD_PATH）。
     pub const DAEMON_PATH: &str = concatcp!(ADB_DIR, "mtkd");
     pub const LIBADBROOT_PATH: &str = concatcp!(LIBRARY_DIR, "libadbroot.so");
 
     pub const DAEMON_LINK_PATH: &str = concatcp!(BINARY_DIR, "mtkd");
 
-    /// 迁移期兼容：老内核的 KSUD_PATH 还是 /data/adb/ksud，
-    /// 安装完新二进制后在这里留一个软链指过去，避免换 ko 之前 su 失效。
+    /// 更早的名字，只作为清理目标保留（install() 里会删掉它）。
     pub const LEGACY_DAEMON_PATH: &str = concatcp!(ADB_DIR, "ksud");
 
     pub const MODULE_DIR: &str = concatcp!(ADB_DIR, "modules/");
