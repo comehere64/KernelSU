@@ -248,32 +248,47 @@ fn migrate_working_dir() {
         if !old.exists() || new.exists() {
             continue;
         }
-        if std::fs::rename(old, new).is_ok() {
-            log::info!("working dir migrated: {legacy} -> {}", defs::WORKING_DIR);
-        } else {
-            // rename 失败（跨分区或权限），退化为逐个复制
-            let _ = std::fs::create_dir_all(new);
-            copy_dir_all(old, new);
-            if new.exists() {
-                let _ = std::fs::remove_dir_all(old);
-                log::info!("working dir copied from {legacy}");
-            }
-        }
+        // 只复制，不删源。旧目录等 purge_legacy_paths() 确认新 ko 生效后再清，
+        // 否则内存里若还是旧 ko，删早了它找不到 daemon，su 立刻失效。
+        let _ = std::fs::create_dir_all(new);
+        copy_dir_all(old, new);
+        log::info!("working dir copied from {legacy}");
     }
 
-    // 关键：迁移完之后不能把旧路径彻底抹掉。
-    // 内核模块里的 KSUD_PATH / KERNEL_SU_ALLOWLIST 是编译期写死的，
-    // 如果内存里跑的还是旧版 ko，它仍然按旧路径找 daemon 和白名单；
-    // 旧路径一消失，内核找不到 daemon，su 立刻失效（上次就是这么断的，
-    // 只能靠重启加载新 ko 才恢复）。
-    // 所以这里留软链做过渡，等新 ko 真正加载之后由清理逻辑收掉。
-    for (link, target) in [
-        ("/data/adb/oplus_pfmd", defs::DAEMON_PATH),
-        ("/data/adb/oplus_pfm", defs::WORKING_DIR.trim_end_matches('/')),
+    purge_legacy_paths();
+}
+
+/// 旧名字一律不留：改名就是为了让设备上再也搜不到 oplus / opfd。
+///
+/// 但也不能迁移完立刻删——内核模块的 KSUD_PATH / KERNEL_SU_ALLOWLIST
+/// 是编译期写死的，内存里若还是旧 ko，删早了 su 会直接失效（上次断 root
+/// 就是这个原因）。所以先只复制，等 /proc/modules 里确认跑的是 mtk 之后，
+/// 才把旧路径彻底清掉。过渡期不留任何软链。
+fn purge_legacy_paths() {
+    fn new_module_live() -> bool {
+        std::fs::read_to_string("/proc/modules")
+            .map(|s| s.lines().any(|l| l.starts_with("mtk ")))
+            .unwrap_or(false)
+    }
+
+    if !new_module_live() {
+        return;
+    }
+
+    for p in [
+        "/data/adb/oplus_pfm",
+        "/data/adb/oplus_pfmd",
+        "/data/adb/opfm",
+        "/data/adb/opfd",
+        "/data/adb/opm",
     ] {
-        let lp = Path::new(link);
-        if lp.symlink_metadata().is_err() && !lp.exists() {
-            let _ = std::os::unix::fs::symlink(target, lp);
+        let path = std::path::Path::new(p);
+        // 本文件顶部 use 了 anyhow::Ok，会遮蔽 Result::Ok 枚举变体，必须写全路径
+        let std::result::Result::Ok(md) = path.symlink_metadata() else { continue };
+        if md.file_type().is_symlink() || md.is_file() {
+            let _ = std::fs::remove_file(path);
+        } else {
+            let _ = std::fs::remove_dir_all(path);
         }
     }
 }
