@@ -3791,26 +3791,6 @@ fn watch_connection(stream: &mut TcpStream) -> Result<()> {
 fn ensure_state_layout() {
     // 端口/token/触发标记/计算器包名都收在 state/ 下
     let _ = std::fs::create_dir_all(defs::STATE_DIR);
-    // 计算器 dex 与 Kotlin 侧仍按老路径读，这里补反向软链指进 state/，
-    // 免得为了挪文件去改 dex 里的写死字符串。
-    for (link, target) in [
-        ("/data/adb/mtk/webui.port", defs::WEBUI_PORT_PATH),
-        ("/data/adb/mtk/webui.token", defs::WEBUI_TOKEN_PATH),
-        ("/data/adb/mtk/webui.trigger", defs::WEBUI_TRIGGER_PATH),
-        ("/data/adb/mtk/calculator.pkg", defs::CALCULATOR_PKG_PATH),
-    ] {
-        let lp = std::path::Path::new(link);
-        let want = std::path::Path::new(target);
-        let good = match std::fs::read_link(lp) {
-            Ok(t) => t == want,
-            Err(_) => false,
-        };
-        if !good {
-            // 上一版留下的普通文件（或指错方向的旧软链）会让计算器读到过期内容，先清掉
-            let _ = std::fs::remove_file(lp);
-            let _ = std::os::unix::fs::symlink(want, lp);
-        }
-    }
 }
 
 pub fn serve(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
