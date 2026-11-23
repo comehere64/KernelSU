@@ -232,6 +232,10 @@ fn write_status(status: &[Status]) {
     for s in status {
         let _ = writeln!(content, "{} {} {}", s.id, s.state, s.message);
     }
+    if content.is_empty() {
+        // 没有 preinit 模块时也要留一行，否则排障时无法区分“没跑”和“跑了但没模块”
+        content.push_str("none ok no_preinit_modules\n");
+    }
     let result = ensure_dir_exists(defs::WORKING_DIR)
         .and_then(|()| write_atomic(Path::new(defs::PREINIT_STATUS_PATH), &content));
     if let Err(e) = result {

@@ -186,6 +186,29 @@ pub fn on_boot_completed() {
     crate::preinit::on_boot_completed();
 
     run_stage("boot-completed", ScriptWait::NoWait);
+
+    tighten_zygisksu_perms();
+}
+
+/// ZygiskNext 用 umask 0000 建文件，落地就是 0666，任何 App 都能改它的配置。
+/// 这里收到 0600；modules_info 是 0 字节说明模块没登记上，记一笔备查。
+fn tighten_zygisksu_perms() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::path::Path::new("/data/adb/zygisksu");
+    let std::result::Result::Ok(rd) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for e in rd.flatten() {
+        let p = e.path();
+        if p.is_file() {
+            let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+    if let Ok(m) = std::fs::metadata(dir.join("modules_info")) {
+        if m.len() == 0 {
+            warn!("zygisksu modules_info is empty; zygisk modules may not be registered");
+        }
+    }
 }
 
 fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
@@ -226,17 +249,26 @@ fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
         let _ = bootlog.set_permissions(std::fs::Permissions::from_mode(0o600));
     }
 
-    let mut args = vec!["-s", "9", defs::BOOTLOG_TIMEOUT];
-    args.extend_from_slice(command);
-    // timeout -s 9 30s logcat > boot.log
+    // timeout -s 9 30s logcat -b all | head -c <cap>
+    //
+    // 只靠下次开机的预检不够：logcat -b all 是把整段系统日志落盘，单次就能写到
+    // 20M 以上，等下次开机再删，日志早就把 /data 撑爆了。必须边写边截断：
+    // head 写满 cap 就退出，logcat 收到 SIGPIPE 跟着结束。
+    let cap = defs::BOOTLOG_MAX_BYTES.to_string();
+    let inner = command.join(" ");
+    let shell_cmd = format!(
+        "exec timeout -s 9 {} {} | head -c {}",
+        defs::BOOTLOG_TIMEOUT, inner, cap
+    );
     let result = unsafe {
-        std::process::Command::new("timeout")
+        std::process::Command::new("sh")
             .process_group(0)
             .pre_exec(|| {
                 utils::switch_cgroups();
                 Ok(())
             })
-            .args(args)
+            .arg("-c")
+            .arg(shell_cmd)
             .stdout(Stdio::from(bootlog))
             .spawn()
     };

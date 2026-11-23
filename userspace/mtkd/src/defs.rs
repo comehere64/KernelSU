@@ -78,6 +78,12 @@ mod android {
     pub const PREINIT_MANIFEST_FILE: &str = ".manifest";
     pub const PREINIT_BOOTCOUNT_FILE: &str = ".preinit_bootcount";
     pub const PREINIT_STATUS_PATH: &str = concatcp!(WORKING_DIR, "preinit_status");
+    /// 落盘的 ko 目录。
+    ///
+    /// 管理器的 LKM 是开机 late-load，内存里跑着 ko 而磁盘上没有备份：
+    /// 只要管理器某次没起来（比如上次那个迁移删旧路径的事故），就彻底没 root。
+    /// 这里存当前 KMI 的那一个，作为兜底。
+    pub const KO_DIR: &str = concatcp!(WORKING_DIR, "ko/");
 
     pub const MODULE_WEB_DIR: &str = "webroot";
     pub const MODULE_ACTION_SH: &str = "action.sh";

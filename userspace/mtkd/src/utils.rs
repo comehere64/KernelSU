@@ -221,6 +221,51 @@ pub fn has_magisk() -> bool {
     which::which("magisk").is_ok()
 }
 
+/// 从 /proc/version 推导当前 KMI，例如 6.6.118-android15-... -> "android15-6.6"。
+/// 做法是拿 assets 里的候选逐个去 version 串里找 androidXX 和 major.minor。
+fn current_kmi() -> std::string::String {
+    let ver = std::fs::read_to_string("/proc/version").unwrap_or_default();
+    for kmi in crate::assets::list_supported_kmi() {
+        let mut it = kmi.splitn(2, '-');
+        let android = it.next().unwrap_or("");
+        let kernel = it.next().unwrap_or("");
+        if !android.is_empty() && !kernel.is_empty() && ver.contains(android) && ver.contains(kernel)
+        {
+            return kmi;
+        }
+    }
+    std::string::String::new()
+}
+
+/// 把当前 KMI 对应的 ko 落一份到 /data/adb/mtk/ko/。
+///
+/// 管理器是开机 late-load，内存里跑着 ko 而磁盘上一个都没有：只要管理器某次
+/// 没起来（上次迁移删旧路径那次就是这样），root 直接没了，而且没有任何本地
+/// 备份可以救。这里只存当前 KMI 的那一个，不铺 8 个，避免留下一堆可疑文件。
+fn stock_kernel_module() {
+    let kmi = current_kmi();
+    if kmi.is_empty() {
+        log::warn!("cannot determine KMI, skip stocking kernel module");
+        return;
+    }
+    let dir = std::path::Path::new(defs::KO_DIR);
+    if std::fs::create_dir_all(dir).is_err() {
+        return;
+    }
+    let dst = dir.join(format!("{kmi}_kernelsu.ko"));
+    if dst.exists() {
+        return;
+    }
+    let name = format!("{kmi}_kernelsu.ko");
+    if let std::result::Result::Ok(data) = crate::assets::get_asset_data(&name) {
+        if std::fs::write(&dst, &data).is_ok() {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&dst, std::fs::Permissions::from_mode(0o600));
+            log::info!("stocked kernel module: {name}");
+        }
+    }
+}
+
 fn link_ksud_to_bin() -> Result<()> {
     let ksu_bin = PathBuf::from(defs::DAEMON_PATH);
     let ksu_bin_link = PathBuf::from(defs::DAEMON_LINK_PATH);
@@ -324,6 +369,8 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     // 同分区 rename 是原子操作，不会出现"搬到一半断电"的半残状态。
     // 新目录已存在时不动（避免覆盖），只把旧目录里缺的补过去。
     migrate_working_dir();
+    // 当前 KMI 的 ko 落一份到 /data/adb/mtk/ko/，管理器没起来时还有本地兜底
+    stock_kernel_module();
 
     // 计算器伪装包里的 classes.dex 把 daemon 和工作目录写死在启动脚本字面量里，
     // 而 DEX 的 string_ids 必须按内容升序排列，改这些字符串会破坏排序，
