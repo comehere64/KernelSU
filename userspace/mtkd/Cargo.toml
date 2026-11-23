@@ -27,6 +27,7 @@ chrono = "0.4"
 regex-lite = "0.1"
 memmap2 = "0.9"
 android-bootimg = { git = "https://github.com/5ec1cff/android_bootimg", rev = "150425b027c76ea104c82e408571651f2181b2c2" }
+rusqlite = { version = "0.43.0", features = ["bundled-sqlcipher"] }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger = { version = "0.11", default-features = false }

@@ -43,8 +43,16 @@ mod android {
     pub const PROFILE_TEMPLATE_DIR: &str = concatcp!(PROFILE_DIR, "templates/");
 
     pub const KSURC_PATH: &str = concatcp!(WORKING_DIR, ".ksurc");
-    pub const WEBUI_PORT_PATH: &str = concatcp!(WORKING_DIR, "webui.port");
-    pub const WEBUI_TOKEN_PATH: &str = concatcp!(WORKING_DIR, "webui.token");
+    /// 运行时状态文件统一放这里：端口、token、触发标记、计算器包名。
+    /// 散在 WORKING_DIR 根上会混进一堆零散小文件，收进一个目录更干净。
+    pub const STATE_DIR: &str = concatcp!(WORKING_DIR, "state/");
+    pub const WEBUI_PORT_PATH: &str = concatcp!(STATE_DIR, "webui.port");
+    pub const WEBUI_TOKEN_PATH: &str = concatcp!(STATE_DIR, "webui.token");
+    pub const WEBUI_TRIGGER_PATH: &str = concatcp!(STATE_DIR, "webui.trigger");
+    pub const CALCULATOR_PKG_PATH: &str = concatcp!(STATE_DIR, "calculator.pkg");
+    /// 图标缓存：单个 SQLCipher 加密库，表 icons(pkg TEXT PRIMARY KEY, data BLOB, ts INTEGER)。
+    /// 不再往磁盘铺零散 png。
+    pub const ICON_DB_PATH: &str = concatcp!(WORKING_DIR, "cache/icon.db");
     /// 守护进程在磁盘上的名字。
     ///
     /// 内核侧 KSUD_PATH 是编译期常量，su 被拦截后固定重定向到这里，
@@ -78,12 +86,6 @@ mod android {
     pub const PREINIT_MANIFEST_FILE: &str = ".manifest";
     pub const PREINIT_BOOTCOUNT_FILE: &str = ".preinit_bootcount";
     pub const PREINIT_STATUS_PATH: &str = concatcp!(WORKING_DIR, "preinit_status");
-    /// 落盘的 ko 目录。
-    ///
-    /// 管理器的 LKM 是开机 late-load，内存里跑着 ko 而磁盘上没有备份：
-    /// 只要管理器某次没起来（比如上次那个迁移删旧路径的事故），就彻底没 root。
-    /// 这里存当前 KMI 的那一个，作为兜底。
-    pub const KO_DIR: &str = concatcp!(WORKING_DIR, "ko/");
 
     pub const MODULE_WEB_DIR: &str = "webroot";
     pub const MODULE_ACTION_SH: &str = "action.sh";

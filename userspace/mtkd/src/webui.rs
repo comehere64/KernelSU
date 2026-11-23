@@ -928,6 +928,58 @@ static APP_ICON_CACHE: std::sync::Mutex<
     Option<std::collections::HashMap<String, (String, String)>>,
 > = std::sync::Mutex::new(None);
 
+/// 图标库密钥：由工作目录派生，避免明文密钥硬编码。
+#[cfg(target_os = "android")]
+fn icon_db_key() -> String {
+    sha256::digest(format!("pfm-icon-db-v1:{}", crate::defs::WORKING_DIR))
+}
+
+/// 打开（必要时创建）图标库。整库 SQLCipher 加密，表 icons(pkg,data,ts)。
+#[cfg(target_os = "android")]
+fn icons_db() -> Option<rusqlite::Connection> {
+    if let Some(dir) = std::path::Path::new(crate::defs::ICON_DB_PATH).parent() {
+        let _ = std::fs::create_dir_all(dir);
+    }
+    let conn = rusqlite::Connection::open(crate::defs::ICON_DB_PATH).ok()?;
+    conn.pragma_update(None, "key", icon_db_key()).ok()?;
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS icons(pkg TEXT PRIMARY KEY, data BLOB, ts INTEGER);",
+    )
+    .ok()?;
+    Some(conn)
+}
+
+#[cfg(target_os = "android")]
+fn icon_db_get(key: &str) -> Option<Vec<u8>> {
+    icon_db_get_with_ts(key).map(|(b, _)| b)
+}
+
+#[cfg(target_os = "android")]
+fn icon_db_get_with_ts(key: &str) -> Option<(Vec<u8>, i64)> {
+    let conn = icons_db()?;
+    let mut stmt = conn
+        .prepare("SELECT data, ts FROM icons WHERE pkg = ?1")
+        .ok()?;
+    stmt.query_row([key], |row| {
+        Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, i64>(1)?))
+    })
+    .ok()
+}
+
+#[cfg(target_os = "android")]
+fn icon_db_put(key: &str, bytes: &[u8]) {
+    let Some(conn) = icons_db() else { return };
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let _ = conn.execute(
+        "INSERT INTO icons(pkg,data,ts) VALUES(?1,?2,?3)
+         ON CONFLICT(pkg) DO UPDATE SET data=excluded.data, ts=excluded.ts",
+        rusqlite::params![key, bytes, ts],
+    );
+}
+
 #[cfg(target_os = "android")]
 fn apk_icon(path: &str) -> anyhow::Result<Vec<u8>> {
     use std::collections::hash_map::DefaultHasher;
@@ -944,13 +996,15 @@ fn apk_icon(path: &str) -> anyhow::Result<Vec<u8>> {
     md.modified().ok().hash(&mut hasher);
     let key = format!("{:016x}", hasher.finish());
 
-    let dir = format!("{}cache/apk_icon", crate::defs::WORKING_DIR);
-    let out = format!("{dir}/{key}.png");
-    if let Ok(bytes) = std::fs::read(&out) {
+    if let Some(bytes) = icon_db_get(&key) {
         if !bytes.is_empty() {
             return Ok(bytes);
         }
     }
+
+    let dir = std::env::temp_dir().join("pfm-apkicon");
+    std::fs::create_dir_all(&dir)?;
+    let out = dir.join(format!("{key}.png")).to_string_lossy().to_string();
 
     let dex = materialize_dex("appicon.dex").ok_or_else(|| anyhow::anyhow!("缺少 appicon.dex"))?;
     let dex_path = dex.to_string_lossy().to_string();
@@ -971,9 +1025,11 @@ fn apk_icon(path: &str) -> anyhow::Result<Vec<u8>> {
     }
 
     let bytes = std::fs::read(&out)?;
+    let _ = std::fs::remove_file(&out);
     if bytes.is_empty() {
         anyhow::bail!("APK 图标是空的");
     }
+    icon_db_put(&key, &bytes);
     Ok(bytes)
 }
 
@@ -1063,6 +1119,8 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
         return None;
     }
 
+    icon_db_put(pkg_name, b64.as_bytes());
+
     let result = (b64, "image/png".to_string());
 
     {
@@ -1097,22 +1155,22 @@ fn tighten_dir(dir: &str) {
 
 #[cfg(target_os = "android")]
 fn icon_from_disk(pkg_name: &str) -> Option<(String, String)> {
-    let dir = format!("{}/app_icons", crate::defs::WORKING_DIR);
-    tighten_dir(&dir);
-    let png = std::path::Path::new(&dir).join(icon_cache_name(pkg_name));
-    let png_time = std::fs::metadata(&png).and_then(|m| m.modified()).ok()?;
+    // 从加密库里取。库里没有就直接返回 None，让调用方走 app_process 现取。
+    let (bytes, ts) = icon_db_get_with_ts(pkg_name)?;
+    if bytes.is_empty() {
+        return None;
+    }
 
+    // apk 的修改时间晚于库里记录的时间，说明图标过期，作废重取。
     if let Some(apk) = cached_apk_path(pkg_name)
-        && let Ok(apk_time) = std::fs::metadata(&apk).and_then(|m| m.modified())
-        && apk_time > png_time
+        && let Ok(meta) = std::fs::metadata(&apk)
+        && let Ok(modified) = meta.modified()
+        && let Ok(since) = modified.duration_since(std::time::UNIX_EPOCH)
+        && since.as_secs() as i64 > ts
     {
         return None;
     }
 
-    let bytes = std::fs::read(&png).ok()?;
-    if bytes.is_empty() {
-        return None;
-    }
     Some((base64_encode(&bytes), "image/png".to_string()))
 }
 
@@ -2553,7 +2611,7 @@ done
 # 网页端启动器（现在是那个计算器）的包名每次安装都会重新生成，安装时由管理器写在这个文件里
 # —— 这是唯一可靠的来源。**不猜**：以前这里会按包名形状（com.<5 个小写字母>.<5 个小写字母>）
 # 兜底猜一个，撞上了就会把那个不相干的应用从所有应用里额外隐藏掉；宁可这次不写 extraAppList。
-LAUNCHER_PKG=$(head -1 /data/adb/mtk/calculator.pkg 2>/dev/null | tr -d '[:space:]')
+LAUNCHER_PKG=$(head -1 /data/adb/mtk/state/calculator.pkg 2>/dev/null | tr -d '[:space:]')
 if [ -n "$LAUNCHER_PKG" ] && ! pm list packages -3 | grep -q "^package:$LAUNCHER_PKG$"; then
     # 文件里记的那个包已经卸载了：当作没有启动器，不要退回猜。
     LAUNCHER_PKG=""
@@ -3591,6 +3649,8 @@ fn watch_connection(stream: &mut TcpStream) -> Result<()> {
 }
 
 pub fn serve(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
+    // 端口/token/触发标记/计算器包名都收在 state/ 下
+    let _ = std::fs::create_dir_all(defs::STATE_DIR);
     serve_with(listener, idle_timeout, false, None)
 }
 
