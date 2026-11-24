@@ -30,6 +30,13 @@ android-bootimg = { git = "https://github.com/5ec1cff/android_bootimg", rev = "1
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
 env_logger = { version = "0.11", default-features = false }
+# 下面三个只在 android 段声明过，而 webui_files / apkparser / webui_apps 这几个模块
+# 是无条件编译的：桌面端构建（cross，windows/mac/linux-musl）会直接报
+# "cannot find module or crate"。这里给桌面端补一份最小可用的，代码里只用到
+# Deflated/Stored 两种压缩方式，不需要 lzma/xz 那套 C 依赖。
+libc = "0.2"
+encoding_rs = "0.8"
+zip = { version = "8", features = ["deflate", "time"], default-features = false }
 
 [target.'cfg(target_os = "android")'.dependencies]
 rustix = { version = "1", features = [

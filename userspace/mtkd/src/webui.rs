@@ -3880,6 +3880,7 @@ fn watch_connection(stream: &mut TcpStream) -> Result<()> {
 /// 在 `/data/adb/ksu/` 和 `/data/adb/ksu/state/` 下各出现一次：备份会存两份，
 /// `du` 会重复算，清理时删掉任意一份都可能让另一边失效（软链指向不存在的目标）。
 /// 现在旧路径上的普通文件搬进 state/ 之后删除，旧软链直接删，两边只留一份。
+#[cfg(target_os = "android")]
 fn ensure_state_layout() {
     use std::path::{Path, PathBuf};
 
@@ -3918,6 +3919,11 @@ fn ensure_state_layout() {
         }
         let _ = std::fs::remove_file(&old_path);
     }
+}
+
+#[cfg(not(target_os = "android"))]
+fn ensure_state_layout() {
+    // 工作目录常量只在 Android 下定义，桌面端没有 state/ 这套布局。
 }
 
 pub fn serve(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
@@ -3980,10 +3986,12 @@ pub fn serve_for_browser(packages: &[String], port: Option<u16>) -> Result<()> {
     }
 }
 
+#[cfg(target_os = "android")]
 fn watcher_pid_path() -> String {
     format!("{}/webui.auto.pid", defs::WORKING_DIR.trim_end_matches('/'))
 }
 
+#[cfg(target_os = "android")]
 fn another_watcher_running() -> bool {
     let Ok(text) = std::fs::read_to_string(watcher_pid_path()) else {
         return false;
@@ -3997,6 +4005,7 @@ fn another_watcher_running() -> bool {
     cmdline.windows(12).any(|window| window == b"auto-browser")
 }
 
+#[cfg(target_os = "android")]
 fn remember_watcher() {
     let _ = std::fs::write(watcher_pid_path(), std::process::id().to_string());
 }
