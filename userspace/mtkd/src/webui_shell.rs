@@ -172,8 +172,10 @@ fn spawn_pty(dir: &str) -> Result<Box<Pty>> {
             &raw mut master,
             &raw mut slave,
             std::ptr::null_mut(),
-            std::ptr::null(),
-            std::ptr::null(),
+            // apple/bsd 的 openpty 签名是 *mut termios / *mut winsize，
+            // Android(bionic) 是 *const：null_mut 两边都能隐式转，null() 在 mac 上编不过。
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
         ) != 0
         {
             return Err(std::io::Error::last_os_error()).with_context(|| "openpty 失败");
