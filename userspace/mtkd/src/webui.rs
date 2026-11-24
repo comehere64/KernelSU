@@ -3791,6 +3791,16 @@ fn watch_connection(stream: &mut TcpStream) -> Result<()> {
 fn ensure_state_layout() {
     // 端口/token/触发标记/计算器包名都收在 state/ 下
     let _ = std::fs::create_dir_all(defs::STATE_DIR);
+    // 旧版把 calculator.pkg / webui.trigger 写在 /data/adb/mtk/ 扁平路径，
+    // 计算器 dex 现在只读 state/，这里把旧文件迁过来，否则启动器包名解析不到、
+    // 密码会一直退回默认的 1234。
+    for name in ["calculator.pkg", "webui.trigger"] {
+        let new = format!("{}{}", defs::STATE_DIR, name);
+        let old = format!("/data/adb/mtk/{}", name);
+        if !std::path::Path::new(&new).exists() {
+            let _ = std::fs::copy(&old, &new);
+        }
+    }
 }
 
 pub fn serve(listener: TcpListener, idle_timeout: Duration) -> Result<()> {
