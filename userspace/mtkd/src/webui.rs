@@ -21,6 +21,7 @@ use crate::module;
 use crate::webui_spawn;
 
 const INDEX_HTML: &str = include_str!("../assets/web/index.html");
+const FAVICON_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#007aff"/><rect x="14" y="12" width="36" height="14" rx="4" fill="#ffffff" opacity="0.9"/><g fill="#ffffff"><rect x="14" y="32" width="10" height="10" rx="2"/><rect x="27" y="32" width="10" height="10" rx="2"/><rect x="40" y="32" width="10" height="10" rx="2"/><rect x="14" y="45" width="10" height="10" rx="2"/><rect x="27" y="45" width="10" height="10" rx="2"/><rect x="40" y="45" width="10" height="10" rx="2"/></g></svg>"#;
 
 const HIDE_MANAGER_FLAG: &str = "/data/adb/mtk/hide_manager";
 
@@ -1137,7 +1138,8 @@ fn apk_icon(path: &str) -> anyhow::Result<Vec<u8>> {
         }
     }
 
-    let dir = std::env::temp_dir().join("pfm-apkicon");
+    // 按 pid 隔离：上一次启动（旧端口）留下的半成品/过期 png 不会被这一次复用。
+    let dir = std::env::temp_dir().join(format!("pfm-apkicon-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())));
     std::fs::create_dir_all(&dir)?;
     let out = dir.join(format!("{key}.png")).to_string_lossy().to_string();
 
@@ -1914,7 +1916,10 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
     let path = req.path.split('?').next().unwrap_or("/");
 
     let redeemed = query_param(req, "t").is_some_and(|ticket| redeem_ticket(&ticket, peer));
-    if req.method != "OPTIONS" && !redeemed && !token_matches(&request_token(req)) {
+    // favicon 是浏览器自己发的、不带任何 token 的请求，让它走 token 门卫就永远是 403，
+    // 表现就是"页面进来了但图标加载不出来"。
+    let public_icon = req.method == "GET" && path == "/favicon.ico";
+    if req.method != "OPTIONS" && !public_icon && !redeemed && !token_matches(&request_token(req)) {
         let token = request_token(req);
         let source = if token.is_empty() {
             "no token"
@@ -1956,6 +1961,11 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
         }
 
         ("GET", p) if p.starts_with("/modweb/") => serve_module_web(stream, p),
+        ("GET", "/favicon.ico") => {
+            let extra = "Cache-Control: no-store, must-revalidate\r\nPragma: no-cache\r\n";
+            send_response_with(stream, 200, "image/svg+xml", FAVICON_SVG.as_bytes(), extra)
+        }
+
 
         ("GET", p) if p.starts_with("/assets/") || p.starts_with("/internal/") => {
             serve_module_asset_by_referer(stream, p, req)
@@ -3797,8 +3807,23 @@ fn ensure_state_layout() {
     for name in ["calculator.pkg", "webui.trigger"] {
         let new = format!("{}{}", defs::STATE_DIR, name);
         let old = format!("/data/adb/mtk/{}", name);
-        if !std::path::Path::new(&new).exists() {
-            let _ = std::fs::copy(&old, &new);
+        let new_path = std::path::Path::new(&new);
+        let old_path = std::path::Path::new(&old);
+
+        // state/ 下的才是真文件；旧扁平路径只留一个指向它的软链。
+        if !new_path.exists() && old_path.is_file() {
+            let _ = std::fs::copy(old_path, new_path);
+        }
+
+        // 旧路径上如果还是普通文件，先删掉；否则两边各留一份，内容迟早分叉。
+        if let Ok(md) = old_path.symlink_metadata() {
+            if !md.file_type().is_symlink() {
+                let _ = std::fs::remove_file(old_path);
+            }
+        }
+
+        if new_path.exists() && !old_path.exists() {
+            let _ = std::os::unix::fs::symlink(new_path, old_path);
         }
     }
 }
@@ -3897,7 +3922,19 @@ fn bind_auto_port(explicit: Option<u16>) -> Result<(TcpListener, u16)> {
         return Ok((listener, port));
     }
 
-    // 每次启动都在 [PORT_RANGE_START, PORT_RANGE_END] 里重新随机，不复用上次的端口（规格 7.1）。
+    // 先复用上次落盘的端口。端口一变，已经打开过的页面、cookie、图标请求全都指向旧端口，
+    // 第二次进来图标就会整片加载不出来。只有旧端口这次拿不到，才退到随机。
+    if let Some(previous) = load_persisted_port() {
+        if previous >= PORT_RANGE_START && previous <= PORT_RANGE_END {
+            if let Ok(listener) = TcpListener::bind(("127.0.0.1", previous)) {
+                persist_port(previous);
+                log::info!("Web UI: reusing persisted port {previous}");
+                return Ok((listener, previous));
+            }
+            log::warn!("Web UI: persisted port {previous} is busy, picking a new one");
+        }
+    }
+
     let span = u32::from(PORT_RANGE_END - PORT_RANGE_START) + 1;
     let mut last_err: Option<std::io::Error> = None;
     for _ in 0..PORT_BIND_ATTEMPTS {

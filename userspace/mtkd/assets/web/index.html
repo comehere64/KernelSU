@@ -6,6 +6,8 @@
 <meta name="screen-orientation" content="portrait">
 <meta name="x5-orientation" content="portrait">
 <title>KernelSU</title>
+  <link rel="icon" href="/favicon.ico">
+  <link rel="apple-touch-icon" href="/favicon.ico">
 <style>
 :root {
   --keyboard-inset: 0px;
@@ -1712,7 +1714,7 @@ function appIconFetch(pkg) {
   return new Promise(resolve => {
     appIconQueue.push(async () => {
       try {
-        const res = await fetch(API_BASE + '/api/apps/icon?package=' + encodeURIComponent(pkg));
+        const res = await fetch(new URL('/api/apps/icon?package=' + encodeURIComponent(pkg), location.origin).href, { cache: 'no-store' });
         const data = await res.json();
         if (data.success && data.icon) {
           appIconCache[pkg] = { b64: data.icon, mime: data.mime };
@@ -2344,6 +2346,7 @@ function uiIcon(name) { return (UI_ICONS[name] || UI_ICONS.file).replace(/\n/g, 
 
 function fmApkIcon(entry) {
   const src = API_BASE + '/api/fs/apkicon?path=' + encodeURIComponent(entry.path) +
+    '&_=' + Date.now() +
     '&t=' + encodeURIComponent(entry.mtime || 0);
   return '<img class="fm-apk-icon" loading="lazy" alt="" src="' + src +
     '" onerror="fmApkIconFallback(this)">';
