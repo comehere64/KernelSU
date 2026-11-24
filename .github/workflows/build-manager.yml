@@ -123,9 +123,6 @@ jobs:
   
   build-ksud-extra:
     needs: [build-lkm, build-ksuinit]
-    # windows 目标走的还是 libc/unix 那套 API（webui_files 里的 chmod/chown），
-    # 编不过属于分叉本身的平台缺口，不让它把整个出包流程带下水。
-    continue-on-error: ${{ matrix.target == 'x86_64-pc-windows-gnu' }}
     strategy:
       matrix:
         include:

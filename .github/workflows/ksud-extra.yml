@@ -64,6 +64,10 @@ jobs:
           userspace/mtkd/src/lkm_image_bootstrap.S
 
     - name: Build ksud
+      # windows 目标走的还是 libc 的 unix 接口（webui_files 的 chmod/chown），
+      # 编不过属于分叉本身的平台缺口：让它失败但不把整条出包链带下水。
+      # 注意 job 级 continue-on-error 不允许引用 matrix/inputs，只能在 step 上写。
+      continue-on-error: ${{ inputs.target == 'x86_64-pc-windows-gnu' }}
       run: CROSS_NO_WARNINGS=0 cross build --target ${{ inputs.target }} --release --manifest-path ./userspace/mtkd/Cargo.toml
 
     - name: Upload ksud artifact
