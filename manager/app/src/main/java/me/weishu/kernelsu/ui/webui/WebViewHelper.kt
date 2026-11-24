@@ -15,6 +15,7 @@ import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.webkit.WebViewAssetLoader
@@ -101,6 +102,10 @@ internal suspend fun prepareWebView(
                 javaScriptEnabled = true
                 domStorageEnabled = true
                 allowFileAccess = false
+                // 服务端每次启动都可能换端口、换令牌：WebView 里留着的旧页面
+                // 会带着旧的绝对地址去请求一个已经关掉的端口，第二次进来就是
+                // 白屏加破图。这里彻底绕开 HTTP 缓存，每次都回服务端取。
+                cacheMode = WebSettings.LOAD_NO_CACHE
             }
 
             val webRoot = File("${webUIState.modDir}/webroot")

@@ -1,7 +1,7 @@
 /// The panel's three own state files.
-pub const WEBUI_JUMPS_PATH: &str = "/data/adb/mtk/webui_jumps.json";
-pub const WEBUI_QUICK_RUN_PATH: &str = "/data/adb/mtk/webui_quickrun.json";
-pub const WEBUI_THEME_PATH: &str = "/data/adb/mtk/webui_theme.json";
+pub const WEBUI_JUMPS_PATH: &str = "/data/adb/ksu/webui_jumps.json";
+pub const WEBUI_QUICK_RUN_PATH: &str = "/data/adb/ksu/webui_quickrun.json";
+pub const WEBUI_THEME_PATH: &str = "/data/adb/ksu/webui_theme.json";
 
 /// The `sh` to hand a child.
 pub const SHELL_PATH: &str = if cfg!(target_os = "android") {
@@ -23,18 +23,13 @@ mod android {
     pub const BOOTLOG_TIMEOUT: &str = "30s";
 
     pub const ADB_DIR: &str = "/data/adb/";
-    // 工作目录原名 /data/adb/ksu，这个路径本身就是 KernelSU 的强特征：
-    // /data/adb/ksu、/data/adb/ksu/bin、/data/adb/ksu/.allowlist 全都能被扫到。
-    // 改成厂商风格的名字，与模块名 mtk 保持一致。
-    // 老目录由 utils.rs 的 install() 负责迁移，不会丢数据。
-    pub const WORKING_DIR: &str = concatcp!(ADB_DIR, "mtk/");
-    /// 改名前的旧工作目录，只用于迁移。
-    pub const LEGACY_WORKING_DIR: &str = concatcp!(ADB_DIR, "ksu/");
+    // 工作目录恢复成 KernelSU 的默认路径。
+    pub const WORKING_DIR: &str = concatcp!(ADB_DIR, "ksu/");
     pub const BINARY_DIR: &str = concatcp!(WORKING_DIR, "bin/");
     pub const LIBRARY_DIR: &str = concatcp!(WORKING_DIR, "lib/");
     pub const LOG_DIR: &str = concatcp!(WORKING_DIR, "log/");
     /// 单个 bootlog（logcat/dmesg）的体积上限。超过就丢弃重来，
-    /// 避免 /data/adb/mtk/log 无限膨胀（曾经涨到 52M）。
+    /// 避免 /data/adb/ksu/log 无限膨胀（曾经涨到 52M）。
     pub const BOOTLOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
     pub const SULOGD_LOCK_PATH: &str = concatcp!(WORKING_DIR, "sulogd.lock");
 

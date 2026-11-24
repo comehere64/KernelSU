@@ -21,9 +21,9 @@ use crate::module;
 use crate::webui_spawn;
 
 const INDEX_HTML: &str = include_str!("../assets/web/index.html");
-const FAVICON_SVG: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#007aff"/><rect x="14" y="12" width="36" height="14" rx="4" fill="#ffffff" opacity="0.9"/><g fill="#ffffff"><rect x="14" y="32" width="10" height="10" rx="2"/><rect x="27" y="32" width="10" height="10" rx="2"/><rect x="40" y="32" width="10" height="10" rx="2"/><rect x="14" y="45" width="10" height="10" rx="2"/><rect x="27" y="45" width="10" height="10" rx="2"/><rect x="40" y="45" width="10" height="10" rx="2"/></g></svg>"#;
+const FAVICON_SVG: &str = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#007aff"/><rect x="14" y="12" width="36" height="14" rx="4" fill="#ffffff" opacity="0.9"/><g fill="#ffffff"><rect x="14" y="32" width="10" height="10" rx="2"/><rect x="27" y="32" width="10" height="10" rx="2"/><rect x="40" y="32" width="10" height="10" rx="2"/><rect x="14" y="45" width="10" height="10" rx="2"/><rect x="27" y="45" width="10" height="10" rx="2"/><rect x="40" y="45" width="10" height="10" rx="2"/></g></svg>"##;
 
-const HIDE_MANAGER_FLAG: &str = "/data/adb/mtk/hide_manager";
+const HIDE_MANAGER_FLAG: &str = "/data/adb/ksu/hide_manager";
 
 const KSU_BRIDGE: &str = concat!(
     "<script>",
@@ -1210,7 +1210,7 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
 
     let classpath = format!("-Djava.class.path={}", dex_path);
     // 图标数据是从 app_process 的 stdout（BASE64: 行）拿的，这个文件只是
-    // dex 的落盘参数、内容用不上。所以不再往 /data/adb/mtk/app_icons 写：
+    // dex 的落盘参数、内容用不上。所以不再往 /data/adb/ksu/app_icons 写：
     // 那个目录本身就是 KernelSU 的强特征，而且每个包名一个文件等于把
     // 用户装了哪些 App 摊在磁盘上。改用临时目录，读完立刻删。
     let output_dir = std::env::temp_dir().join("pfm-icons");
@@ -1369,7 +1369,7 @@ fn reboot_label(mode: &str) -> String {
 }
 
 #[cfg(target_os = "android")]
-const SOFT_REBOOT_LOG: &str = "/data/adb/mtk/log/soft-reboot.log";
+const SOFT_REBOOT_LOG: &str = "/data/adb/ksu/log/soft-reboot.log";
 
 #[cfg(target_os = "android")]
 fn ksud_path() -> std::path::PathBuf {
@@ -1912,8 +1912,84 @@ fn bridge_packages_info(names: &[String]) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// 剥掉入口链接里的随机段（`/{seg}/`）。
+///
+/// `/api/mint` 发出去的地址形如 `http://host:port/{seg}/?t=...`，而这个 `seg`
+/// 本身不参与路由。页面一旦挂在 `/{seg}/` 下，它里面所有相对路径的请求就变成
+/// `/{seg}/api/...`，直接落进 404 —— 页面能开，图标和接口全灭。
+/// 这里把这一段统一剥掉，路由只看剥完的结果。
+fn strip_entry_segment(path: &str) -> String {
+    let Some(rest) = path.strip_prefix('/') else {
+        return path.to_string();
+    };
+    let Some((head, tail)) = rest.split_once('/') else {
+        return path.to_string();
+    };
+    // 只认 4 位小写十六进制，和 mint 里的 `{:04x}` 对上；别的首段一律不动。
+    let is_entry_seg = head.len() == 4
+        && head
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    if !is_entry_seg {
+        return path.to_string();
+    }
+    if tail.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{tail}")
+    }
+}
+
+/// 这个请求是不是"导航"——浏览器地址栏、WebView 直接打开、旧书签点进来。
+///
+/// 判断只看路径最后一段有没有扩展名：接口和资源都带扩展名或被精确匹配，
+/// 落不到这里的只剩页面地址。旧地址（旧端口、旧随机段、书签）一律回页面本身，
+/// 而不是甩一个 404 白屏。
+fn looks_like_navigation(path: &str) -> bool {
+    // 接口、模块网页、资源都有各自的前缀：这些没匹配上就是真的不存在，
+    // 不能拿页面去糊弄调用方（否则前端 fetch 拿到一段 HTML，JSON 解析才报错）。
+    if path.starts_with("/api/")
+        || path.starts_with("/modweb/")
+        || path.starts_with("/assets/")
+        || path.starts_with("/internal/")
+    {
+        return false;
+    }
+    let last = path.rsplit('/').next().unwrap_or("");
+    !last.contains('.')
+}
+
+/// 发页面本身。
+///
+/// 一律 `no-store`：端口和令牌每次都可能换，浏览器/WebView 只要留了一份旧副本，
+/// 里面的相对路径就会打到旧端口上，第二次进来就是一片破图。
+fn send_index(stream: &mut TcpStream, req: &HttpRequest, redeemed: bool) -> Result<()> {
+    let token = request_token(req);
+    let mut extra = String::from(
+        "Cache-Control: no-store, no-cache, must-revalidate, max-age=0\r\n\
+         Pragma: no-cache\r\n\
+         Expires: 0\r\n\
+         X-Content-Type-Options: nosniff\r\n",
+    );
+    if redeemed || token_matches(&token) {
+        extra.push_str(&format!(
+            "Set-Cookie: {TOKEN_COOKIE}={}; Path=/; HttpOnly; SameSite=Strict\r\n",
+            current_token()
+        ));
+    }
+    send_response_with(
+        stream,
+        200,
+        "text/html; charset=utf-8",
+        INDEX_HTML.as_bytes(),
+        &extra,
+    )
+}
+
 fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) -> Result<()> {
-    let path = req.path.split('?').next().unwrap_or("/");
+    let raw_path = req.path.split('?').next().unwrap_or("/");
+    let path = strip_entry_segment(raw_path);
+    let path = path.as_str();
 
     let redeemed = query_param(req, "t").is_some_and(|ticket| redeem_ticket(&ticket, peer));
     // favicon 是浏览器自己发的、不带任何 token 的请求，让它走 token 门卫就永远是 403，
@@ -1941,24 +2017,7 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
     }
 
     match (req.method.as_str(), path) {
-        ("GET", "/") | ("GET", "/index.html") => {
-            let token = request_token(req);
-            let mut extra =
-                String::from("Cache-Control: no-store, must-revalidate\r\nPragma: no-cache\r\n");
-            if redeemed || token_matches(&token) {
-                extra.push_str(&format!(
-                    "Set-Cookie: {TOKEN_COOKIE}={}; Path=/; HttpOnly; SameSite=Strict\r\n",
-                    current_token()
-                ));
-            }
-            send_response_with(
-                stream,
-                200,
-                "text/html; charset=utf-8",
-                INDEX_HTML.as_bytes(),
-                &extra,
-            )
-        }
+        ("GET", "/") | ("GET", "/index.html") => send_index(stream, req, redeemed),
 
         ("GET", p) if p.starts_with("/modweb/") => serve_module_web(stream, p),
         ("GET", "/favicon.ico") => {
@@ -1989,10 +2048,21 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             )
         }
 
+        // 页面走了只是通知，不轮换令牌。
+        //
+        // 以前这里调 reset_token()：页面一隐藏（切标签页、WebView 被回收、按返回，
+        // 浏览器都会发 pagehide）就把令牌作废，而 cookie 里还是旧值。第二次进来
+        // 页面照样能打开，但所有 /api/* 全 403 —— 表现就是图标、应用列表、状态
+        // 整片加载不出来。令牌只在显式退出时轮换。
         ("POST", "/api/close") | ("GET", "/api/close") => {
-            log::info!("Web UI: page closed, rotating the token so the cookie dies with it");
-            reset_token()?;
+            log::info!("Web UI: page closed (token kept)");
             json_response(stream, &ApiResponse::ok("closed"))
+        }
+
+        ("POST", "/api/logout") | ("GET", "/api/logout") => {
+            log::info!("Web UI: explicit logout, rotating the token");
+            reset_token()?;
+            json_response(stream, &ApiResponse::ok("logged-out"))
         }
 
         ("GET", "/api/watch") => watch_connection(stream),
@@ -2672,7 +2742,15 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             }
         }
 
-        _ => error_response(stream, 404, "Not found"),
+        _ => {
+            // 端口会变、随机段会变，旧地址（书签、历史、上次留着的标签页）打不开
+            // 是常态。导航请求直接把页面发回去，由页面自己按当前令牌重新拉数据；
+            // 只有接口和资源才真的报 404。
+            if req.method == "GET" && looks_like_navigation(path) {
+                return send_index(stream, req, redeemed);
+            }
+            error_response(stream, 404, "Not found")
+        }
     }
 }
 
@@ -2756,7 +2834,7 @@ done
 # 网页端启动器（现在是那个计算器）的包名每次安装都会重新生成，安装时由管理器写在这个文件里
 # —— 这是唯一可靠的来源。**不猜**：以前这里会按包名形状（com.<5 个小写字母>.<5 个小写字母>）
 # 兜底猜一个，撞上了就会把那个不相干的应用从所有应用里额外隐藏掉；宁可这次不写 extraAppList。
-LAUNCHER_PKG=$(head -1 /data/adb/mtk/state/calculator.pkg 2>/dev/null | tr -d '[:space:]')
+LAUNCHER_PKG=$(head -1 /data/adb/ksu/state/calculator.pkg 2>/dev/null | tr -d '[:space:]')
 if [ -n "$LAUNCHER_PKG" ] && ! pm list packages -3 | grep -q "^package:$LAUNCHER_PKG$"; then
     # 文件里记的那个包已经卸载了：当作没有启动器，不要退回猜。
     LAUNCHER_PKG=""
@@ -2904,7 +2982,7 @@ fi
 exit 0
 "#;
 
-    let script_path = "/data/adb/mtk/hma_config.sh";
+    let script_path = "/data/adb/ksu/hma_config.sh";
     let mut file = std::fs::File::create(script_path)?;
     file.write_all(script.as_bytes())?;
     drop(file);
@@ -3021,8 +3099,10 @@ fn load_persisted_port() -> Option<u16> {
 fn persist_port(port: u16) {
     use std::os::unix::fs::OpenOptionsExt;
 
-    if let Err(e) = std::fs::create_dir_all(defs::WORKING_DIR) {
-        log::warn!("failed to create {}: {e}", defs::WORKING_DIR);
+    // 端口文件在 state/ 下，不是工作目录根上：只建 WORKING_DIR 会让这次写入
+    // 直接 ENOENT，state/webui.port 永远不存在，启动器就读不到端口。
+    if let Err(e) = std::fs::create_dir_all(defs::STATE_DIR) {
+        log::warn!("failed to create {}: {e}", defs::STATE_DIR);
         return;
     }
     let written = std::fs::OpenOptions::new()
@@ -3793,38 +3873,50 @@ fn watch_connection(stream: &mut TcpStream) -> Result<()> {
     Ok(())
 }
 
-/// 建好 state/ 目录，并在旧路径挂反向软链指向 state/ 下的真文件。
+/// 建好 state/ 目录，并把散落在工作目录根上的旧文件收进来。
 ///
-/// 计算器 dex 与 Kotlin 侧写死了 /data/adb/mtk/webui.*，不能改，
-/// 所以由 daemon 负责把旧名桥接过去。两个入口（常驻 / --watch）都必须先跑这段，
-/// 否则 state/ 不存在、webui.port 没人生成，启动器会报「确认已授予root 权限」。
+/// 唯一写入位置就是 state/：端口、token、触发标记、计算器包名。
+/// 以前这里会在工作目录根上挂一个反向软链指向 state/ 里的真文件，结果同一个东西
+/// 在 `/data/adb/ksu/` 和 `/data/adb/ksu/state/` 下各出现一次：备份会存两份，
+/// `du` 会重复算，清理时删掉任意一份都可能让另一边失效（软链指向不存在的目标）。
+/// 现在旧路径上的普通文件搬进 state/ 之后删除，旧软链直接删，两边只留一份。
 fn ensure_state_layout() {
-    // 端口/token/触发标记/计算器包名都收在 state/ 下
-    let _ = std::fs::create_dir_all(defs::STATE_DIR);
-    // 旧版把 calculator.pkg / webui.trigger 写在 /data/adb/mtk/ 扁平路径，
-    // 计算器 dex 现在只读 state/，这里把旧文件迁过来，否则启动器包名解析不到、
-    // 密码会一直退回默认的 1234。
-    for name in ["calculator.pkg", "webui.trigger"] {
-        let new = format!("{}{}", defs::STATE_DIR, name);
-        let old = format!("/data/adb/mtk/{}", name);
-        let new_path = std::path::Path::new(&new);
-        let old_path = std::path::Path::new(&old);
+    use std::path::{Path, PathBuf};
 
-        // state/ 下的才是真文件；旧扁平路径只留一个指向它的软链。
-        if !new_path.exists() && old_path.is_file() {
-            let _ = std::fs::copy(old_path, new_path);
+    let _ = std::fs::create_dir_all(defs::STATE_DIR);
+
+    // 这四个都是"运行时状态"，只属于 state/。根上出现的任何副本都是历史遗留。
+    for name in [
+        "calculator.pkg",
+        "webui.trigger",
+        "webui.port",
+        "webui.token",
+    ] {
+        let new_path: PathBuf = Path::new(defs::STATE_DIR).join(name);
+        let old_path: PathBuf = Path::new(defs::WORKING_DIR).join(name);
+
+        let Ok(md) = old_path.symlink_metadata() else {
+            continue;
+        };
+
+        if md.file_type().is_symlink() {
+            // 反向软链：真身在 state/ 里，删这一端不丢数据。
+            let _ = std::fs::remove_file(&old_path);
+            continue;
         }
 
-        // 旧路径上如果还是普通文件，先删掉；否则两边各留一份，内容迟早分叉。
-        if let Ok(md) = old_path.symlink_metadata() {
-            if !md.file_type().is_symlink() {
-                let _ = std::fs::remove_file(old_path);
+        if !md.is_file() {
+            continue;
+        }
+
+        // 普通文件：state/ 里还没有就搬过去（同分区 rename 是原子的，
+        // 失败再退回复制），然后无条件删掉根上这一份。
+        if !new_path.exists() {
+            if std::fs::rename(&old_path, &new_path).is_err() {
+                let _ = std::fs::copy(&old_path, &new_path);
             }
         }
-
-        if new_path.exists() && !old_path.exists() {
-            let _ = std::os::unix::fs::symlink(new_path, old_path);
-        }
+        let _ = std::fs::remove_file(&old_path);
     }
 }
 
@@ -3844,6 +3936,9 @@ pub fn serve_for_browser(packages: &[String], port: Option<u16>) -> Result<()> {
         anyhow::bail!("--auto-browser 至少要给一个包名");
     }
     let watched = packages.join(",");
+    // 计算器走的就是这条路（--auto-browser）。它比 serve()/serve_watched() 更早
+    // 被调用，必须先建好 state/ 并把旧路径的副本收进来，否则连端口都落不了盘。
+    ensure_state_layout();
     if another_watcher_running() {
         for _ in 0..30 {
             thread::sleep(Duration::from_millis(100));
@@ -4172,6 +4267,85 @@ mod tests {
         assert!(
             lower.contains("set-cookie: ksu_webui="),
             "token cookie missing: {reply}"
+        );
+
+        let _ = handle.join();
+    }
+
+    /// 页面隐藏（切标签、WebView 被回收、按返回）都会发 pagehide → `/api/close`。
+    /// 那时候如果轮换令牌，cookie 立刻作废，第二次进来页面能开、接口全 403。
+    #[test]
+    fn closing_the_page_does_not_invalidate_the_token() {
+        let _guard = serve_guard();
+        let (listener, port) = bind_webui(Some(0)).expect("bind");
+        let handle = thread::spawn(move || serve(listener, Duration::from_millis(2500)));
+        let token = wait_for_token();
+        assert!(!token.is_empty());
+
+        // 页面走了
+        let closed = request_status(port, &format!("/api/close?k={token}"));
+        assert!(closed.starts_with("HTTP/1.1 200"), "{closed}");
+
+        // 令牌还是那一把：旧 cookie 依然能拿到数据（第二次进页面靠的就是它）
+        let api = request_status(port, &format!("/api/heartbeat?k={token}"));
+        assert!(
+            api.starts_with("HTTP/1.1 200"),
+            "token died with the page: {api}"
+        );
+        assert_eq!(current_token(), token, "token was rotated on page close");
+
+        let _ = handle.join();
+    }
+
+    /// `/api/mint` 发出去的地址是 `/{seg}/?t=...`，页面挂在随机段下时
+    /// 它里面相对路径的请求会变成 `/{seg}/api/...`，必须能落到真正的路由上。
+    #[test]
+    fn a_page_under_the_random_entry_segment_still_reaches_the_api() {
+        assert_eq!(strip_entry_segment("/abcd/"), "/");
+        assert_eq!(strip_entry_segment("/abcd"), "/abcd");
+        assert_eq!(strip_entry_segment("/abcd/api/heartbeat"), "/api/heartbeat");
+        assert_eq!(strip_entry_segment("/abcd/index.html"), "/index.html");
+        assert_eq!(strip_entry_segment("/api/heartbeat"), "/api/heartbeat");
+        // 非十六进制的首段不动，避免吃掉正常的路径
+        assert_eq!(strip_entry_segment("/zzzz/x"), "/zzzz/x");
+        assert_eq!(
+            strip_entry_segment("/modweb/abc/index.html"),
+            "/modweb/abc/index.html"
+        );
+
+        let _guard = serve_guard();
+        let (listener, port) = bind_webui(Some(0)).expect("bind");
+        let handle = thread::spawn(move || serve(listener, Duration::from_millis(2500)));
+        let token = wait_for_token();
+
+        let page = request_status(port, &format!("/a1b2/?k={token}"));
+        assert!(page.starts_with("HTTP/1.1 200"), "entry link 404s: {page}");
+
+        let api = request_status(port, &format!("/a1b2/api/heartbeat?k={token}"));
+        assert!(api.starts_with("HTTP/1.1 200"), "prefixed API 404s: {api}");
+
+        let _ = handle.join();
+    }
+
+    /// 旧地址（旧端口、旧随机段、书签）点进来要能看到页面，
+    /// 但真正的接口不存在时仍然要 404，不能拿 HTML 糊弄 fetch。
+    #[test]
+    fn stale_links_open_the_page_but_unknown_apis_still_404() {
+        let _guard = serve_guard();
+        let (listener, port) = bind_webui(Some(0)).expect("bind");
+        let handle = thread::spawn(move || serve(listener, Duration::from_millis(2500)));
+        let token = wait_for_token();
+
+        let stale = request_status(port, &format!("/9f3c/old?k={token}"));
+        assert!(
+            stale.starts_with("HTTP/1.1 200"),
+            "stale entry link did not fall back to the page: {stale}"
+        );
+
+        let missing = request_status(port, &format!("/api/nope?k={token}"));
+        assert!(
+            missing.starts_with("HTTP/1.1 404"),
+            "unknown API should 404, not serve HTML: {missing}"
         );
 
         let _ = handle.join();

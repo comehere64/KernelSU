@@ -46,7 +46,7 @@ class HomeViewModel(
 
     private fun buildState(): HomeUiState {
         val kernelVersion = getKernelVersion()
-        // The disguise switch the web UI owns: while /data/adb/mtk/hide_manager exists, the home
+        // The disguise switch the web UI owns: while /data/adb/ksu/hide_manager exists, the home
         // screen reports the kernel as not installed. Read through su because /data/adb is
         // root-only, and read here rather than in the UI so every screen sees the same answer.
         val hidden = me.weishu.kernelsu.ui.util.isManagerHidden()

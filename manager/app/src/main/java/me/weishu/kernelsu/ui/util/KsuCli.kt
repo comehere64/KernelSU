@@ -707,7 +707,7 @@ fun restartApp(packageName: String, userId: Int? = null) {
 }
 
 /**
- * The disguise switch the web UI owns: `/data/adb/mtk/hide_manager`.
+ * The disguise switch the web UI owns: `/data/adb/ksu/hide_manager`.
  *
  * Read through su because /data/adb is root-only. Every screen that asks whether this app is the
  * manager has to consult it, or the disguise only covers part of the app.
@@ -715,7 +715,7 @@ fun restartApp(packageName: String, userId: Int? = null) {
 fun isManagerHidden(): Boolean = runCatching {
     com.topjohnwu.superuser.ShellUtils.fastCmd(
         getRootShell(),
-        "test -f /data/adb/mtk/hide_manager && echo 1",
+        "test -f /data/adb/ksu/hide_manager && echo 1",
     ).contains("1")
 }.getOrDefault(false)
 
@@ -727,15 +727,15 @@ fun isManagerHidden(): Boolean = runCatching {
  * already be uninstalled — this is the way back that does not depend on either.
  */
 fun clearManagerHidden() {
-    runCatching { ShellUtils.fastCmd(getRootShell(), "rm -f /data/adb/mtk/hide_manager") }
+    runCatching { ShellUtils.fastCmd(getRootShell(), "rm -f /data/adb/ksu/hide_manager") }
 }
 
 /** 打开隐藏管理器状态：只写标记文件，不改任何权限判定与内核状态。 */
 fun setManagerHidden(hidden: Boolean) {
     val cmd = if (hidden) {
-        "mkdir -p /data/adb/ksu && : > /data/adb/mtk/hide_manager"
+        "mkdir -p /data/adb/ksu && : > /data/adb/ksu/hide_manager"
     } else {
-        "rm -f /data/adb/mtk/hide_manager"
+        "rm -f /data/adb/ksu/hide_manager"
     }
     runCatching { ShellUtils.fastCmd(getRootShell(), cmd) }
 }
@@ -753,7 +753,7 @@ fun matchesTriggerCode(typed: String): Boolean {
         return false
     }
     val stored = runCatching {
-        ShellUtils.fastCmd(getRootShell(), "cat /data/adb/mtk/webui.trigger 2>/dev/null")
+        ShellUtils.fastCmd(getRootShell(), "cat /data/adb/ksu/state/webui.trigger 2>/dev/null")
     }.getOrDefault("").filter { it.isDigit() }
     return clean == stored.ifEmpty { "1234" }
 }

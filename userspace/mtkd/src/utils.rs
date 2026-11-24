@@ -231,7 +231,7 @@ fn link_ksud_to_bin() -> Result<()> {
 }
 
 
-/// 把旧工作目录（/data/adb/ksu 或 /data/adb/oplus_pfm）迁到 /data/adb/mtk。
+/// 把改名期留下的旧工作目录（/data/adb/oplus_pfm）迁回 /data/adb/ksu。
 ///
 /// 只做一次：新目录已经存在就直接返回。
 /// 先尝试 rename（同分区原子，最快最安全），失败再逐个复制。
@@ -242,8 +242,8 @@ fn migrate_working_dir() {
 
     let new = Path::new(defs::WORKING_DIR);
 
-    // 历史上有过两次改名，两个旧目录都可能存在，都要迁过来。
-    for legacy in [defs::LEGACY_WORKING_DIR, "/data/adb/oplus_pfm/"] {
+    // 只剩 oplus_pfm 这一个历史名字要迁；mtk 那一版已经彻底回退成 ksu。
+    for legacy in ["/data/adb/oplus_pfm/"] {
         let old = Path::new(legacy);
         if !old.exists() || new.exists() {
             continue;
@@ -320,7 +320,7 @@ fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) {
 pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Result<()> {
     ensure_dir_exists(defs::ADB_DIR)?;
 
-    // 工作目录改名迁移：/data/adb/ksu -> /data/adb/mtk
+    // 工作目录迁移：/data/adb/oplus_pfm -> /data/adb/ksu
     // 同分区 rename 是原子操作，不会出现"搬到一半断电"的半残状态。
     // 新目录已存在时不动（避免覆盖），只把旧目录里缺的补过去。
     migrate_working_dir();

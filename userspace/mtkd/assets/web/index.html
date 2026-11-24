@@ -6,8 +6,11 @@
 <meta name="screen-orientation" content="portrait">
 <meta name="x5-orientation" content="portrait">
 <title>KernelSU</title>
-  <link rel="icon" href="/favicon.ico">
-  <link rel="apple-touch-icon" href="/favicon.ico">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <link rel="icon" href="favicon.ico">
+  <link rel="apple-touch-icon" href="favicon.ico">
 <style>
 :root {
   --keyboard-inset: 0px;
@@ -891,8 +894,16 @@ body.modal-open { overflow: hidden; }
 
 <script>
 if (/[?&](k|t)=/.test(location.search)) history.replaceState(null, '', location.pathname);
-addEventListener('pagehide', () => { try { navigator.sendBeacon('/api/close'); } catch (e) {} });
-const API_BASE = '';
+// 端口每次启动都可能变，页面也可能挂在入口链接的随机段（/<seg>/）下。
+// 所有请求一律按"当前页面的目录"拼相对路径：不写死 origin、不写死端口，
+// 端口换了、随机段换了，页面自己照样能取到资源和数据。
+const API_BASE = (() => {
+  const dir = location.pathname.replace(/[^/]*$/, '');
+  return dir.replace(/\/$/, '');
+})();
+addEventListener('pagehide', () => {
+  try { navigator.sendBeacon(API_BASE + '/api/close'); } catch (e) {}
+});
 let kernelInfo = null;
 let appList = [];
 let moduleList = [];
@@ -1714,7 +1725,10 @@ function appIconFetch(pkg) {
   return new Promise(resolve => {
     appIconQueue.push(async () => {
       try {
-        const res = await fetch(new URL('/api/apps/icon?package=' + encodeURIComponent(pkg), location.origin).href, { cache: 'no-store' });
+        const res = await fetch(
+          API_BASE + '/api/apps/icon?package=' + encodeURIComponent(pkg) + '&_=' + Date.now(),
+          { cache: 'no-store', credentials: 'same-origin' }
+        );
         const data = await res.json();
         if (data.success && data.icon) {
           appIconCache[pkg] = { b64: data.icon, mime: data.mime };

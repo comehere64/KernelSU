@@ -76,8 +76,8 @@ int execle(const char *pathname, const char *arg, ...) {
 
     // start dump envp
     std::vector<const char *> env_list;
-    bool ksurc_exists = (access("/data/adb/mtk/.ksurc", F_OK) == 0);
-    const char *ksu_env_str = "ENV=/data/adb/mtk/.ksurc";
+    bool ksurc_exists = (access("/data/adb/ksu/.ksurc", F_OK) == 0);
+    const char *ksu_env_str = "ENV=/data/adb/ksu/.ksurc";
 
     if (old_envp != nullptr) {
         for (size_t i = 0; old_envp[i] != nullptr; ++i) {
@@ -115,9 +115,9 @@ void Init() {
     unsetenv("LD_LIBRARY_PATH");
     std::string path = getenv("PATH") ?: "";
     if (!path.empty()) {
-        path += ":/data/adb/mtk/bin";
+        path += ":/data/adb/ksu/bin";
     } else {
-        path += "/data/adb/mtk/bin";
+        path += "/data/adb/ksu/bin";
     }
     setenv("PATH", path.c_str(), 1);
 }
