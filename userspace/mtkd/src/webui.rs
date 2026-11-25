@@ -1064,6 +1064,15 @@ fn icon_store_load() -> std::collections::HashMap<String, (Vec<u8>, i64)> {
     map
 }
 
+/// 图标库的写锁。
+///
+/// 图标是 6 路并发拉的（前端 APP_ICON_PARALLEL=6），每个请求一个线程，而
+/// icon_db_put 是"读全库 → 插一条 → 整库覆写"。没有这把锁的时候，6 个线程各自
+/// 读到同一份旧库、各自覆写，后写的把别人刚写进去的条目整片冲掉；fs::write 又是
+/// 先截断再写，并发读还会读到半截文件。表现就是第一次进入图标正常（写的时候看不
+/// 出来），第二次进来库里是空的或解析不出来，图标整片加载失败。
+static ICON_DB_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(target_os = "android")]
 fn icon_store_save(map: &std::collections::HashMap<String, (Vec<u8>, i64)>) {
     let mut plain = Vec::new();
@@ -1092,7 +1101,13 @@ fn icon_store_save(map: &std::collections::HashMap<String, (Vec<u8>, i64)>) {
     if let Some(dir) = std::path::Path::new(crate::defs::ICON_DB_PATH).parent() {
         let _ = std::fs::create_dir_all(dir);
     }
-    let _ = std::fs::write(crate::defs::ICON_DB_PATH, &out);
+    // 先写临时文件再 rename：同分区 rename 是原子的，读的人不会读到写了一半的库。
+    let tmp = format!("{}.tmp", crate::defs::ICON_DB_PATH);
+    if std::fs::write(&tmp, &out).is_ok() {
+        if std::fs::rename(&tmp, crate::defs::ICON_DB_PATH).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+    }
 }
 
 #[cfg(target_os = "android")]
@@ -1111,10 +1126,36 @@ fn icon_db_put(key: &str, bytes: &[u8]) {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
+    let _guard = ICON_DB_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut map = icon_store_load();
     map.insert(key.to_string(), (bytes.to_vec(), ts));
     icon_store_save(&map);
 }
+
+/// 丢掉整个图标库。
+///
+/// 退出网页端时调用：库里的东西只是加速用的，删掉之后下次进来重新现取，
+/// 不会再出现"上一轮写坏的库把这一轮的图标带死"的情况。
+#[cfg(target_os = "android")]
+fn icon_store_clear() {
+    let _guard = ICON_DB_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let path = crate::defs::ICON_DB_PATH;
+    if std::path::Path::new(path).exists() {
+        match std::fs::remove_file(path) {
+            Ok(()) => log::info!("Web UI: icon db cleared ({path})"),
+            Err(e) => log::warn!("failed to clear icon db {path}: {e}"),
+        }
+    }
+    let _ = std::fs::remove_file(format!("{path}.tmp"));
+    if let Ok(mut cache) = APP_ICON_CACHE.lock()
+        && let Some(map) = cache.as_mut()
+    {
+        map.clear();
+    }
+}
+
+#[cfg(not(target_os = "android"))]
+fn icon_store_clear() {}
 
 #[cfg(target_os = "android")]
 fn apk_icon(path: &str) -> anyhow::Result<Vec<u8>> {
@@ -2055,7 +2096,10 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
         // 页面照样能打开，但所有 /api/* 全 403 —— 表现就是图标、应用列表、状态
         // 整片加载不出来。令牌只在显式退出时轮换。
         ("POST", "/api/close") | ("GET", "/api/close") => {
-            log::info!("Web UI: page closed (token kept)");
+            // 页面走了：令牌留着（否则第二次进来全是 403），但图标库整份删掉。
+            // 图标库只是加速用的中间产物，留着反而会把上一轮写坏的库带进这一轮。
+            log::info!("Web UI: page closed (token kept, icon db dropped)");
+            icon_store_clear();
             json_response(stream, &ApiResponse::ok("closed"))
         }
 
@@ -4135,6 +4179,8 @@ fn serve_with(
         }
     }
 
+    // 服务结束（idle 超时 / 启动器消失 / 被要求退出）：图标库不留在盘上。
+    icon_store_clear();
     Ok(())
 }
 
@@ -4358,6 +4404,81 @@ mod tests {
         );
 
         let _ = handle.join();
+    }
+
+    /// 图标库落在 /data/adb/ksu/cache/，非 root 环境写不进去，这时跳过用例。
+    #[cfg(target_os = "android")]
+    fn icon_db_writable() -> bool {
+        let dir = std::path::Path::new(crate::defs::ICON_DB_PATH)
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or_default();
+        if std::fs::create_dir_all(&dir).is_err() {
+            return false;
+        }
+        let probe = dir.join(".probe");
+        let ok = std::fs::write(&probe, b"x").is_ok();
+        let _ = std::fs::remove_file(&probe);
+        ok
+    }
+
+    /// 关闭页面必须把图标库清掉：库里留下的坏数据会把下一次进入的图标带死。
+    #[test]
+    fn closing_the_page_clears_the_icon_db() {
+        #[cfg(target_os = "android")]
+        if !icon_db_writable() {
+            return;
+        }
+        let _guard = serve_guard();
+        let (listener, port) = bind_webui(Some(0)).expect("bind");
+        let handle = thread::spawn(move || serve(listener, Duration::from_millis(2000)));
+        let token = wait_for_token();
+
+        // 先往库里塞点东西（非 Android 上 icon_store_clear 是空实现，这里只验证不炸）
+        #[cfg(target_os = "android")]
+        {
+            icon_db_put("com.example.probe", b"AAAA");
+            assert!(icon_store_load().contains_key("com.example.probe"));
+        }
+
+        let closed = request_status(port, &format!("/api/close?k={token}"));
+        assert!(closed.starts_with("HTTP/1.1 200"), "{closed}");
+
+        #[cfg(target_os = "android")]
+        {
+            assert!(
+                !std::path::Path::new(crate::defs::ICON_DB_PATH).exists(),
+                "icon db survived the page close"
+            );
+            assert!(icon_store_load().is_empty(), "icon db still has entries");
+        }
+
+        let _ = handle.join();
+    }
+
+    /// 库文件的读写必须自洽：写进去能读出来，坏文件不 panic。
+    #[test]
+    #[cfg(target_os = "android")]
+    fn icon_db_roundtrips_and_rejects_a_corrupt_file() {
+        if !icon_db_writable() {
+            return;
+        }
+        let _guard = serve_guard();
+        let path = std::path::Path::new(crate::defs::ICON_DB_PATH);
+        let _ = std::fs::remove_file(path);
+
+        icon_db_put("pkg.one", b"payload-one");
+        icon_db_put("pkg.two", b"payload-two");
+        let map = icon_store_load();
+        assert_eq!(map.len(), 2, "concurrent puts dropped entries");
+        assert_eq!(map.get("pkg.one").map(|v| v.0.clone()), Some(b"payload-one".to_vec()));
+
+        // 半截文件不能让读的人炸，也不能把库当成有效
+        std::fs::write(path, b"PFM").unwrap();
+        assert!(icon_store_load().is_empty());
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(format!("{}.tmp", crate::defs::ICON_DB_PATH));
     }
 
     #[test]
