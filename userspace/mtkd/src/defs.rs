@@ -2,6 +2,8 @@
 pub const WEBUI_JUMPS_PATH: &str = "/data/adb/ksu/webui_jumps.json";
 pub const WEBUI_QUICK_RUN_PATH: &str = "/data/adb/ksu/webui_quickrun.json";
 pub const WEBUI_THEME_PATH: &str = "/data/adb/ksu/webui_theme.json";
+/// 网页端自己的开关（目前只有"退出时是否清图标库"）。
+pub const WEBUI_PREFS_PATH: &str = "/data/adb/ksu/webui_prefs.json";
 
 /// The `sh` to hand a child.
 pub const SHELL_PATH: &str = if cfg!(target_os = "android") {

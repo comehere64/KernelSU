@@ -603,6 +603,16 @@ body.modal-open { overflow: hidden; }
             <div class="pref-subtitle" id="webuiStatus">运行中</div>
           </div>
         </div>
+        <div class="pref-item" onclick="prefsToggleIconCache(this)">
+          <div class="pref-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          </div>
+          <div class="pref-content">
+            <div class="pref-title">退出时清空图标缓存</div>
+            <div class="pref-subtitle" id="iconCacheStatus">开（下次进入重新取图标）</div>
+          </div>
+          <div class="switch active" id="iconCacheSwitch"><div class="switch-knob"></div></div>
+        </div>
       </div>
       <div class="section-title">文件</div>
       <div class="card">
@@ -972,7 +982,7 @@ function switchPage(page) {
   document.body.classList.toggle('fm-mode', isSubPage(page));
   document.body.classList.toggle('fm-files', page === 'files');
   fmSyncTopbar(page);
-  if (page === 'settings') {}
+  if (page === 'settings') prefsLoad();
 }
 
 
@@ -1405,6 +1415,43 @@ function themeSave() {
   }).catch(e => showToast('主题保存失败：' + e.message));
 }
 
+// ---- 网页端开关：退出时是否清空图标库 ----
+// 清库是默认行为：图标库曾被 6 路并发写坏，坏库会让第二次进入的图标整片加载失败。
+// 想要图标秒开就把这个关掉，库会留在 /data/adb/ksu/cache/icon.db。
+let PREFS = { clear_icon_cache_on_exit: true };
+
+function prefsRender() {
+  const on = !!PREFS.clear_icon_cache_on_exit;
+  const sw = document.getElementById('iconCacheSwitch');
+  if (sw) sw.classList.toggle('active', on);
+  const st = document.getElementById('iconCacheStatus');
+  if (st) st.textContent = on ? '开（下次进入重新取图标）' : '关（保留 icon.db，图标秒开）';
+}
+
+function prefsLoad() {
+  return fmApi('/api/ui/prefs').then(saved => {
+    if (saved && typeof saved.clear_icon_cache_on_exit === 'boolean') {
+      PREFS.clear_icon_cache_on_exit = saved.clear_icon_cache_on_exit;
+    }
+    prefsRender();
+  }).catch(() => prefsRender());
+}
+
+function prefsToggleIconCache(el) {
+  PREFS.clear_icon_cache_on_exit = !PREFS.clear_icon_cache_on_exit;
+  prefsRender();
+  fmApi('/api/ui/prefs', {
+    method: 'POST', headers: FM_JSON,
+    body: JSON.stringify({ clear_icon_cache_on_exit: PREFS.clear_icon_cache_on_exit }),
+  }).then(() => {
+    showToast(PREFS.clear_icon_cache_on_exit ? '已开启：退出时清空图标缓存' : '已关闭：保留图标缓存');
+  }).catch(e => {
+    PREFS.clear_icon_cache_on_exit = !PREFS.clear_icon_cache_on_exit;
+    prefsRender();
+    showToast('保存失败：' + e.message);
+  });
+}
+
 function themeLoad() {
   return fmApi('/api/ui/theme').then(saved => {
     if (!saved) return;
@@ -1439,6 +1486,7 @@ function initTheme() {
   applyTheme();
   if (THEME.seed === THEME_WALLPAPER) themeLoadWallpaper(false);
   themeLoad();
+  prefsLoad();
 
   const mq = window.matchMedia('(prefers-color-scheme: dark)');
   const onChange = () => { if (THEME.mode === 'system') applyTheme(); };

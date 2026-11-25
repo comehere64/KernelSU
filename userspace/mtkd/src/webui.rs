@@ -1138,6 +1138,11 @@ fn icon_db_put(key: &str, bytes: &[u8]) {
 /// 不会再出现"上一轮写坏的库把这一轮的图标带死"的情况。
 #[cfg(target_os = "android")]
 fn icon_store_clear() {
+    // 设置里关掉了就留着库（默认是开，即退出即删）。
+    if !crate::webui_files::load_prefs().clear_icon_cache_on_exit {
+        log::info!("Web UI: icon db kept (clear_icon_cache_on_exit = false)");
+        return;
+    }
     let _guard = ICON_DB_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let path = crate::defs::ICON_DB_PATH;
     if std::path::Path::new(path).exists() {
@@ -2296,6 +2301,14 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
 
         ("POST", "/api/fs/quickrun") => rooted_ok(stream, req, |body: QuickRunBody| {
             crate::webui_files::save_quick_run(&body.quick_run)
+        }),
+
+        ("GET", "/api/ui/prefs") => {
+            json_response(stream, &ApiResponse::ok(crate::webui_files::load_prefs()))
+        }
+
+        ("POST", "/api/ui/prefs") => rooted_ok(stream, req, |body: crate::webui_files::WebuiPrefs| {
+            crate::webui_files::save_prefs(&body)
         }),
 
         ("GET", "/api/ui/theme") => {
@@ -4476,6 +4489,41 @@ mod tests {
         // 半截文件不能让读的人炸，也不能把库当成有效
         std::fs::write(path, b"PFM").unwrap();
         assert!(icon_store_load().is_empty());
+
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(format!("{}.tmp", crate::defs::ICON_DB_PATH));
+    }
+
+    /// 开关为 false 时，退出页面不能把 icon.db 删掉。
+    #[test]
+    #[cfg(target_os = "android")]
+    fn icon_db_is_kept_when_the_setting_is_off() {
+        if !icon_db_writable() {
+            return;
+        }
+        let _guard = serve_guard();
+        let path = std::path::Path::new(crate::defs::ICON_DB_PATH);
+        let _ = std::fs::remove_file(path);
+
+        icon_db_put("pkg.kept", b"payload");
+        assert!(path.exists(), "db was not written");
+
+        // 关掉开关 → 清库调用应当什么都不做
+        crate::webui_files::save_prefs(&crate::webui_files::WebuiPrefs {
+            clear_icon_cache_on_exit: false,
+        })
+        .expect("save prefs");
+        icon_store_clear();
+        assert!(path.exists(), "icon db was cleared even though the setting is off");
+        assert!(icon_store_load().contains_key("pkg.kept"));
+
+        // 开回来 → 必须删掉
+        crate::webui_files::save_prefs(&crate::webui_files::WebuiPrefs {
+            clear_icon_cache_on_exit: true,
+        })
+        .expect("save prefs");
+        icon_store_clear();
+        assert!(!path.exists(), "icon db survived while the setting is on");
 
         let _ = std::fs::remove_file(path);
         let _ = std::fs::remove_file(format!("{}.tmp", crate::defs::ICON_DB_PATH));

@@ -1370,6 +1370,40 @@ impl Theme {
     }
 }
 
+/// 网页端开关。
+///
+/// 现在只有一个：`clear_icon_cache_on_exit`——退出网页端时要不要把
+/// /data/adb/ksu/cache/icon.db 删掉。默认 true。
+///
+/// 默认开是因为图标库曾经被并发写坏过（6 路并发 read-modify-write），坏库会让
+/// 第二次进入的图标整片加载失败；删掉最省事。想要图标秒开、能接受偶尔重取的人
+/// 可以在设置里关掉。
+#[derive(Serialize, serde::Deserialize, Clone)]
+pub struct WebuiPrefs {
+    #[serde(default = "default_true")]
+    pub clear_icon_cache_on_exit: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for WebuiPrefs {
+    fn default() -> Self {
+        Self {
+            clear_icon_cache_on_exit: true,
+        }
+    }
+}
+
+pub fn load_prefs() -> WebuiPrefs {
+    load_json::<WebuiPrefs>(crate::defs::WEBUI_PREFS_PATH)
+}
+
+pub fn save_prefs(prefs: &WebuiPrefs) -> Result<()> {
+    save_json(crate::defs::WEBUI_PREFS_PATH, prefs)
+}
+
 pub fn load_theme() -> Theme {
     load_json::<Theme>(crate::defs::WEBUI_THEME_PATH).normalized()
 }
