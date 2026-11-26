@@ -261,11 +261,31 @@ pub fn parse_scoop(text: &str) -> Result<Vec<String>> {
     }
 }
 
+/// 校验一个"包名"能不能安全地写进 TOML 字符串。
+///
+/// 原来只把 `"` 抠掉，`\n` / `\r` / 控制字符原样带进去：一个包名里塞换行就能
+/// 在 injector.toml 里凭空多出一行配置（比如自己加一条 scoop 之外的键），
+/// 而这份配置是给 root 守护进程读的。这里按 Android 包名的真实字符集收紧。
+fn sanitize_package(name: &str) -> Result<String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("包名为空");
+    }
+    let ok = trimmed.len() <= 255
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | ':' | '-'));
+    if !ok {
+        anyhow::bail!("非法包名：{name}");
+    }
+    Ok(trimmed.to_string())
+}
+
 pub fn set_scoop(text: &str, packages: &[String]) -> Result<String> {
-    let quoted: Vec<String> = packages
-        .iter()
-        .map(|name| format!("\"{}\"", name.replace('"', "")))
-        .collect();
+    let mut quoted: Vec<String> = Vec::with_capacity(packages.len());
+    for name in packages {
+        quoted.push(format!("\"{}\"", sanitize_package(name)?));
+    }
 
     let Some((open, close)) = find_scoop_array(text) else {
         parse_scoop(text).context("injector.toml 里找不到 scoop 数组，且文件本身不是合法 TOML")?;

@@ -16,6 +16,9 @@ import java.io.File
  * `/data/adb/ksu/state/webui.trigger` and pressing `=` starts the server and opens the page.
  */
 object CalculatorLauncher {
+    /** 把字符串包成 shell 单引号字面量，' 用 '"'"' 断开。 */
+    private fun String.q(): String = "'" + replace("'", "'\\''") + "'"
+
     /** The name the template APK is built with; every install gets one generated from it. */
     private const val TEMPLATE_PACKAGE = "com.deskc.calcu"
 
@@ -47,7 +50,7 @@ object CalculatorLauncher {
 
     fun isInstalled(context: Context): Boolean = runCatching {
         val pkg = remembered(context) ?: return@runCatching false
-        ShellUtils.fastCmd(getRootShell(), "pm path $pkg").contains("package:")
+        ShellUtils.fastCmd(getRootShell(), "pm path ${pkg.q()}").contains("package:")
     }.getOrDefault(false)
 
     /** Installs the bundled calculator, replacing whatever is there. */
@@ -67,12 +70,12 @@ object CalculatorLauncher {
 
         // The previous identity goes first, so a re-install does not leave two calculators behind.
         remembered(context)?.let { old ->
-            runCatching { ShellUtils.fastCmd(getRootShell(), "pm uninstall $old") }
+            runCatching { ShellUtils.fastCmd(getRootShell(), "pm uninstall ${old.q()}") }
         }
 
         val shell = getRootShell()
         // pm cannot read the app's private cache dir, so park the APK somewhere readable.
-        ShellUtils.fastCmd(shell, "cp ${apk.absolutePath} $STAGED_APK && chmod 644 $STAGED_APK")
+        ShellUtils.fastCmd(shell, "cp ${apk.absolutePath.q()} ${STAGED_APK.q()} && chmod 644 ${STAGED_APK.q()}")
 
         // ColorOS 的安全中心会把「root 静默安装一个陌生 APK」判成
         // 「检测到有恶意应用尝试破坏系统」，在安装过程中直接拦掉，装完还会把包清掉
@@ -86,7 +89,7 @@ object CalculatorLauncher {
         val output = try {
             ShellUtils.fastCmd(
                 shell,
-                "pm install -r $STAGED_APK; rm -f $STAGED_APK ${staged.absolutePath} ${patched.absolutePath}",
+                "pm install -r ${STAGED_APK.q()}; rm -f ${STAGED_APK.q()} ${staged.absolutePath.q()} ${patched.absolutePath.q()}",
             )
         } finally {
             if (guardEnabled) {
@@ -95,20 +98,20 @@ object CalculatorLauncher {
         }
 
         remember(context, pkg)
-        ShellUtils.fastCmd(getRootShell(), "printf '%s\\n' '$pkg' > $PACKAGE_FILE")
+        ShellUtils.fastCmd(getRootShell(), "printf '%s\\n' ${pkg.q()} > ${PACKAGE_FILE.q()}")
         // The calculator starts the server through su, so authorise it up front: once the Manager
         // is gone there would be nothing left to approve the request.
         grantRoot(context, pkg)
         // Fresh token for the fresh install, so an address that leaked earlier is dead.
         rotateToken()
-        ShellUtils.fastCmd(getRootShell(), "rm -f $LEGACY_AUTOSTART")
+        ShellUtils.fastCmd(getRootShell(), "rm -f ${LEGACY_AUTOSTART.q()}")
 
         !output.contains("Failure", ignoreCase = true)
     }.getOrDefault(false)
 
     fun uninstall(context: Context): Boolean = runCatching {
         val pkg = remembered(context) ?: TEMPLATE_PACKAGE
-        val output = ShellUtils.fastCmd(getRootShell(), "pm uninstall $pkg")
+        val output = ShellUtils.fastCmd(getRootShell(), "pm uninstall ${pkg.q()}")
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .remove(PREF_PACKAGE).apply()
         ShellUtils.fastCmd(getRootShell(), "rm -f $PACKAGE_FILE")
@@ -126,7 +129,7 @@ object CalculatorLauncher {
 
     /** The code in place now, or an empty string when none was ever set. */
     fun readTriggerCode(): String = runCatching {
-        ShellUtils.fastCmd(getRootShell(), "cat $TRIGGER_FILE 2>/dev/null")
+        ShellUtils.fastCmd(getRootShell(), "cat ${TRIGGER_FILE.q()} 2>/dev/null")
     }.getOrDefault("").filter { it.isDigit() }
 
     /**
@@ -139,11 +142,11 @@ object CalculatorLauncher {
         val clean = code.filter { it.isDigit() }
         runCatching {
             if (clean.isEmpty()) {
-                ShellUtils.fastCmd(getRootShell(), "rm -f $TRIGGER_FILE")
+                ShellUtils.fastCmd(getRootShell(), "rm -f ${TRIGGER_FILE.q()}")
             } else {
                 ShellUtils.fastCmd(
                     getRootShell(),
-                    "printf '%s\\n' '$clean' > $TRIGGER_FILE && chmod 600 $TRIGGER_FILE",
+                    "printf '%s\\n' ${clean.q()} > ${TRIGGER_FILE.q()} && chmod 600 ${TRIGGER_FILE.q()}",
                 )
             }
         }

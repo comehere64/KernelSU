@@ -98,7 +98,12 @@ struct HttpRequest {
 }
 
 const MAX_HEADER_BYTES: usize = 16 * 1024;
-const MAX_BODY_BYTES: usize = 512 * 1024 * 1024;
+/// 单次请求体上限。
+///
+/// 原来是 512MB：网页端本身就是 root 权限在跑，一个把 body 塞满的请求（哪怕只是
+/// 误操作、或者页面上的上传按钮点错）就能把 /data 写穿，进而让系统起不来。
+/// 模块 zip 正常也就几十 MB，64MB 足够；真有更大的包走 install-path。
+const MAX_BODY_BYTES: usize = 64 * 1024 * 1024;
 
 enum ParseFailure {
     TooLarge(&'static str),
@@ -166,7 +171,7 @@ fn parse_request(stream: &mut TcpStream) -> std::result::Result<HttpRequest, Par
         .unwrap_or(0);
 
     if content_length > MAX_BODY_BYTES {
-        return Err(ParseFailure::TooLarge("上传内容过大（上限 512MB）"));
+        return Err(ParseFailure::TooLarge("上传内容过大（上限 64MB）"));
     }
 
     let mut body = buf[header_end..].to_vec();
@@ -184,6 +189,10 @@ fn parse_request(stream: &mut TcpStream) -> std::result::Result<HttpRequest, Par
             return Err(ParseFailure::Incomplete("上传中断，请求体不完整"));
         }
         body.extend_from_slice(&body_buf[..n]);
+        // Content-Length 是客户端给的，可能撒谎；实际收到的字节也要守一道。
+        if body.len() > MAX_BODY_BYTES {
+            return Err(ParseFailure::TooLarge("上传内容过大（上限 64MB）"));
+        }
     }
 
     Ok(HttpRequest {
@@ -2411,13 +2420,19 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
                         &format!("创建 {} 失败：{e}", defs::WORKING_DIR),
                     );
                 }
+                // 临时文件名必须唯一：原来是 pid + 毫秒，同一个进程里两次上传落在
+                // 同一毫秒就会撞名，后一个直接把前一个正在被 install_module 读的文件
+                // 覆盖/截断，装出来的模块可能是坏的，也可能删掉别人传的包。
+                // 这里再叠一次 8 字节随机，撞名的概率可以忽略。
+                let nonce = random_hex(8);
                 let tmp_path = std::path::Path::new(defs::WORKING_DIR).join(format!(
-                    ".tmp_module_{}_{}.zip",
+                    ".tmp_module_{}_{}_{}.zip",
                     std::process::id(),
                     std::time::SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .map(|d| d.as_millis())
-                        .unwrap_or(0)
+                        .unwrap_or(0),
+                    nonce
                 ));
                 let tmp = tmp_path.display().to_string();
                 if let Err(e) = std::fs::write(&tmp_path, &req.body) {
@@ -2532,21 +2547,12 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
                 let id = p
                     .trim_start_matches("/api/modules/")
                     .trim_end_matches("/undo");
-                let mut removed = false;
-                for dir in [defs::MODULE_DIR, defs::MODULE_UPDATE_DIR] {
-                    let remove_file = std::path::Path::new(dir)
-                        .join(id)
-                        .join(defs::REMOVE_FILE_NAME);
-                    if remove_file.exists() {
-                        if std::fs::remove_file(&remove_file).is_ok() {
-                            removed = true;
-                        }
-                    }
-                }
-                if removed {
-                    json_response(stream, &ApiResponse::ok("Undo successful"))
-                } else {
-                    error_response(stream, 404, "Module not marked for removal")
+                // 这里以前是手写拼路径删 remove 标记，绕过了 module.rs 的
+                // validate_module_id：id 传 "../../xxx" 就能删到模块目录外面的
+                // remove 文件。改成走库函数，校验和 regenerate_preinit 一起拿回来。
+                match module::undo_uninstall_module(id) {
+                    Ok(()) => json_response(stream, &ApiResponse::ok("Undo successful")),
+                    Err(e) => error_response(stream, 404, &e.to_string()),
                 }
             }
             #[cfg(not(target_os = "android"))]
@@ -3393,22 +3399,33 @@ fn peer_uid(stream: &TcpStream) -> Option<u32> {
         return None;
     }
     let port = addr.port();
-    let table = std::fs::read_to_string("/proc/net/tcp").ok()?;
-    for line in table.lines().skip(1) {
-        let fields: Vec<&str> = line.split_whitespace().collect();
-        if fields.len() < 8 {
-            continue;
-        }
-        let Some((host, port_hex)) = fields[1].split_once(':') else {
+    // 只读 /proc/net/tcp 是不够的：浏览器走 ::1 时连接落在 tcp6 里，
+    // 这里返回 None 就意味着"这次请求没有 uid"，ticket 的 uid 绑定形同虚设。
+    for table_path in ["/proc/net/tcp", "/proc/net/tcp6"] {
+        let Ok(table) = std::fs::read_to_string(table_path) else {
             continue;
         };
-        if !host.eq_ignore_ascii_case("0100007F") {
-            continue;
+        for line in table.lines().skip(1) {
+            let fields: Vec<&str> = line.split_whitespace().collect();
+            if fields.len() < 8 {
+                continue;
+            }
+            let Some((host, port_hex)) = fields[1].split_once(':') else {
+                continue;
+            };
+            // tcp: 0100007F（127.0.0.1）；tcp6: 00000000000000000000000001000000 之类的后缀形态
+            let loopback = host.eq_ignore_ascii_case("0100007F")
+                || host.eq_ignore_ascii_case("00000000000000000000000001000000");
+            if !loopback {
+                continue;
+            }
+            if u16::from_str_radix(port_hex, 16).ok() != Some(port) {
+                continue;
+            }
+            if let Some(uid) = fields[7].parse::<u32>().ok() {
+                return Some(uid);
+            }
         }
-        if u16::from_str_radix(port_hex, 16).ok() != Some(port) {
-            continue;
-        }
-        return fields[7].parse::<u32>().ok();
     }
     None
 }
@@ -3423,7 +3440,9 @@ fn request_token(req: &HttpRequest) -> String {
         for pair in query.split('&') {
             if let Some((key, value)) = pair.split_once('=') {
                 if key == "k" {
-                    return value.to_string();
+                    // 与 query_param 保持一致：URL 里的 "%2F" 之类必须先解码，
+                    // 否则用户把令牌设成带 % 的字符串时永远匹配不上，页面一直 403。
+                    return percent_decode(value);
                 }
             }
         }

@@ -157,9 +157,9 @@ fun getSuperuserCount(): Int {
 
 fun toggleModule(id: String, enable: Boolean): Boolean {
     val cmd = if (enable) {
-        "module enable $id"
+        "module enable ${id.shellQuote()}"
     } else {
-        "module disable $id"
+        "module disable ${id.shellQuote()}"
     }
     val result = execKsud(cmd, true)
     Log.i(TAG, "$cmd result: $result")
@@ -167,14 +167,14 @@ fun toggleModule(id: String, enable: Boolean): Boolean {
 }
 
 fun undoUninstallModule(id: String): Boolean {
-    val cmd = "module undo-uninstall $id"
+    val cmd = "module undo-uninstall ${id.shellQuote()}"
     val result = execKsud(cmd, true)
     Log.i(TAG, "undo uninstall module $id result: $result")
     return result
 }
 
 fun uninstallModule(id: String): Boolean {
-    val cmd = "module uninstall $id"
+    val cmd = "module uninstall ${id.shellQuote()}"
     val result = execKsud(cmd, true)
     Log.i(TAG, "uninstall module $id result: $result")
     return result
@@ -231,7 +231,7 @@ fun flashModule(
             onStderr(message)
             return FlashResult(1, message, false)
         }
-        val cmd = "module install ${file.absolutePath}"
+        val cmd = "module install ${file.absolutePath.shellQuote()}"
         val result = flashWithIO("${getKsuDaemonPath()} $cmd", onStdout, onStderr)
         Log.i("KernelSU", "install module $uri result: $result")
         return FlashResult(result, result.isSuccess && moduleNeedsReboot(file))
@@ -278,7 +278,7 @@ fun runModuleAction(
     }
 
     val result = withNewRootShell(true) {
-        newJob().add("${getKsuDaemonPath()} module action '$moduleId'")
+        newJob().add("${getKsuDaemonPath()} module action ${moduleId.shellQuote()}")
             .to(stdoutCallback, stderrCallback).exec()
     }
 

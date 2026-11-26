@@ -332,6 +332,10 @@ pub fn delete_config_value(module_id: &str, key: &str, config_type: ConfigType) 
 
 /// Clear all config values
 pub fn clear_config(module_id: &str, config_type: ConfigType) -> Result<()> {
+    // 其余入口（load/set/delete）都校验了，这里漏了：module_id 带 "../" 时
+    // get_config_path 会拼出配置目录之外的路径，remove_file 直接删外面任意文件。
+    crate::module::validate_module_id(module_id)?;
+
     let config_path = get_config_path(module_id, config_type);
 
     if config_path.exists() {

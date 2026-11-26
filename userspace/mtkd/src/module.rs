@@ -925,6 +925,10 @@ pub fn enable_module(id: &str) -> Result<()> {
 }
 
 pub fn disable_module(id: &str) -> Result<()> {
+    // 与 enable_module 对齐：不做校验的话 id 可以是 "../xxx"，把 disable 标记写到
+    // MODULE_DIR 外面去（任意路径创建文件）。
+    validate_module_id(id)?;
+
     let module_path = Path::new(defs::MODULE_DIR).join(id);
     ensure!(module_path.exists(), "Module {id} not found");
 
@@ -1198,4 +1202,44 @@ pub fn get_managed_features() -> Result<HashMap<String, Vec<String>>> {
     })?;
 
     Ok(managed_features_map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 模块 id 会被拼进 /data/adb/modules/<id>。带 `..` 或 `/` 就能指向目录外面，
+    /// 上游 4020 补的就是 disable_module / clear_config 这两处漏校验。
+    #[test]
+    fn module_id_rejects_path_traversal() {
+        for bad in [
+            "",
+            "..",
+            "../..",
+            "../../data/adb/modules/x",
+            "a/../../b",
+            "/absolute",
+            "a/b",
+            ".hidden",
+            "-starts-with-dash",
+            "名字",
+        ] {
+            assert!(
+                validate_module_id(bad).is_err(),
+                "should reject module id {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn module_id_accepts_real_module_names() {
+        // 注意：正则要求首字符是字母、后面至少还有一个字符（`[a-zA-Z]` + `+`），
+        // 所以单字符 id 本来就不合法，这里按实际规则列。
+        for good in ["tricky_store", "Zygisk-Next", "a1", "ksu-1.0.2", "My.Module"] {
+            assert!(
+                validate_module_id(good).is_ok(),
+                "should accept module id {good:?}"
+            );
+        }
+    }
 }
