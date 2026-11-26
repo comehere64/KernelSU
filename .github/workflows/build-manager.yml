@@ -100,8 +100,8 @@ jobs:
       # 非 PR 构建：把 manager 的包名与签名常量烧进 ko，
       # 否则内核认的是官方证书，自签 APK 装上去拿不到 root（is_manager: 0）
       package_name: ${{ needs.generate-key.outputs.expected_size == '' && 'me.weishu.kernelsu' || '' }}
-      expected_size: ${{ needs.generate-key.outputs.expected_size || '0x380' }}
-      expected_hash: ${{ needs.generate-key.outputs.expected_hash || '931ea49b678170bc82b62a9f089cdabd4ba80b7dc4383a69e30fb6287637f189' }}
+      expected_size: ${{ needs.generate-key.outputs.expected_size || '0x3ad' }}
+      expected_hash: ${{ needs.generate-key.outputs.expected_hash || '66a84a489ad9242bd2c5e6b767e319db37d44f9d448c1399f518d8bd0fc6e6bf' }}
     secrets: inherit
 
   build-ksuinit:
