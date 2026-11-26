@@ -204,10 +204,10 @@ fn tighten_zygisksu_perms() {
             let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
         }
     }
-    if let Ok(m) = std::fs::metadata(dir.join("modules_info")) {
-        if m.len() == 0 {
-            warn!("zygisksu modules_info is empty; zygisk modules may not be registered");
-        }
+    if let Ok(m) = std::fs::metadata(dir.join("modules_info"))
+        && m.len() == 0
+    {
+        warn!("zygisksu modules_info is empty; zygisk modules may not be registered");
     }
 }
 
@@ -231,9 +231,7 @@ fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
     // 只留一份 .old.log 挡不住总量，实测攒到过 52M。
     // 先看体积：超上限就把新旧一起删掉重新开始，而不是再轮转一份。
     if bootlog.exists() {
-        let too_big = std::fs::metadata(&bootlog)
-            .map(|m| m.len() > defs::BOOTLOG_MAX_BYTES)
-            .unwrap_or(false);
+        let too_big = std::fs::metadata(&bootlog).is_ok_and(|m| m.len() > defs::BOOTLOG_MAX_BYTES);
         if too_big {
             let _ = std::fs::remove_file(&bootlog);
             let _ = std::fs::remove_file(&oldbootlog);
@@ -258,7 +256,9 @@ fn catch_bootlog(logname: &str, command: &[&str]) -> Result<()> {
     let inner = command.join(" ");
     let shell_cmd = format!(
         "exec timeout -s 9 {} {} | head -c {}",
-        defs::BOOTLOG_TIMEOUT, inner, cap
+        defs::BOOTLOG_TIMEOUT,
+        inner,
+        cap
     );
     let result = unsafe {
         std::process::Command::new("sh")

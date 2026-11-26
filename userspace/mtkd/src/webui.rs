@@ -1,4 +1,3 @@
-
 #![allow(clippy::all, clippy::pedantic, clippy::nursery)]
 
 use std::collections::HashMap;
@@ -618,7 +617,8 @@ fn start_module_install_stream(stream: &mut TcpStream, path: &str) -> Result<()>
         return error_response(stream, 404, &format!("找不到文件：{path}"));
     }
 
-    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from(defs::DAEMON_PATH));
+    let exe =
+        std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from(defs::DAEMON_PATH));
     let args = vec![
         "module".to_string(),
         "install".to_string(),
@@ -883,7 +883,6 @@ fn label_from_apk_path(apk_path: &str) -> Option<String> {
     (!label.is_empty()).then_some(label)
 }
 
-
 /// 把 assets 里的 dex 落到 BINARY_DIR，返回路径。
 ///
 /// 原来这段「解包 + create_dir_all + write」在图标和标签两处各抄了一遍，
@@ -969,7 +968,8 @@ fn chacha20_block(key: &[u8; 32], counter: u32, nonce: &[u8; 12]) -> [u8; 64] {
     st[2] = 0x79622d32;
     st[3] = 0x6b206574;
     for i in 0..8 {
-        st[4 + i] = u32::from_le_bytes([key[i * 4], key[i * 4 + 1], key[i * 4 + 2], key[i * 4 + 3]]);
+        st[4 + i] =
+            u32::from_le_bytes([key[i * 4], key[i * 4 + 1], key[i * 4 + 2], key[i * 4 + 3]]);
     }
     st[12] = counter;
     for i in 0..3 {
@@ -1054,13 +1054,17 @@ fn icon_store_load() -> std::collections::HashMap<String, (Vec<u8>, i64)> {
         *i += n;
         Some(s)
     };
-    let Some(cb) = take(&mut i, 4) else { return map };
+    let Some(cb) = take(&mut i, 4) else {
+        return map;
+    };
     let count = u32::from_le_bytes([cb[0], cb[1], cb[2], cb[3]]) as usize;
     for _ in 0..count {
         let Some(kb) = take(&mut i, 2) else { break };
         let klen = u16::from_le_bytes([kb[0], kb[1]]) as usize;
         let Some(k) = take(&mut i, klen) else { break };
-        let Ok(key) = std::str::from_utf8(k) else { break };
+        let Ok(key) = std::str::from_utf8(k) else {
+            break;
+        };
         let Some(tb) = take(&mut i, 8) else { break };
         let mut t8 = [0u8; 8];
         t8.copy_from_slice(tb);
@@ -1109,6 +1113,10 @@ fn icon_store_save(map: &std::collections::HashMap<String, (Vec<u8>, i64)>) {
 
     if let Some(dir) = std::path::Path::new(crate::defs::ICON_DB_PATH).parent() {
         let _ = std::fs::create_dir_all(dir);
+        // 图标库目录只有 root 能进：里面是"装了哪些 App"的聚合信息。
+        if let Some(dir) = dir.to_str() {
+            tighten_dir(dir);
+        }
     }
     // 先写临时文件再 rename：同分区 rename 是原子的，读的人不会读到写了一半的库。
     let tmp = format!("{}.tmp", crate::defs::ICON_DB_PATH);
@@ -1194,7 +1202,13 @@ fn apk_icon(path: &str) -> anyhow::Result<Vec<u8>> {
     }
 
     // 按 pid 隔离：上一次启动（旧端口）留下的半成品/过期 png 不会被这一次复用。
-    let dir = std::env::temp_dir().join(format!("pfm-apkicon-{}-{}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())));
+    let dir = std::env::temp_dir().join(format!(
+        "pfm-apkicon-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs())
+    ));
     std::fs::create_dir_all(&dir)?;
     let out = dir.join(format!("{key}.png")).to_string_lossy().to_string();
 
@@ -1332,7 +1346,7 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
 /// 透露任何信息，仅凭文件名无法反推安装列表。
 #[cfg(target_os = "android")]
 fn icon_cache_name(pkg_name: &str) -> String {
-    use std::hash::{Hasher, DefaultHasher};
+    use std::hash::{DefaultHasher, Hasher};
     let mut h = DefaultHasher::new();
     h.write(pkg_name.as_bytes());
     format!("{:016x}.png", h.finish())
@@ -1789,9 +1803,7 @@ fn collect_apps() -> Vec<AppRow> {
 }
 
 #[cfg(target_os = "android")]
-fn app_labels(
-    listed: &[(String, String, i32, i64)],
-) -> std::collections::HashMap<String, String> {
+fn app_labels(listed: &[(String, String, i32, i64)]) -> std::collections::HashMap<String, String> {
     use std::hash::{Hash, Hasher};
 
     let cache_path = format!("{}/app_labels.cache", crate::defs::WORKING_DIR);
@@ -2080,7 +2092,6 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             send_response_with(stream, 200, "image/svg+xml", FAVICON_SVG.as_bytes(), extra)
         }
 
-
         ("GET", p) if p.starts_with("/assets/") || p.starts_with("/internal/") => {
             serve_module_asset_by_referer(stream, p, req)
         }
@@ -2316,9 +2327,11 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             json_response(stream, &ApiResponse::ok(crate::webui_files::load_prefs()))
         }
 
-        ("POST", "/api/ui/prefs") => rooted_ok(stream, req, |body: crate::webui_files::WebuiPrefs| {
-            crate::webui_files::save_prefs(&body)
-        }),
+        ("POST", "/api/ui/prefs") => {
+            rooted_ok(stream, req, |body: crate::webui_files::WebuiPrefs| {
+                crate::webui_files::save_prefs(&body)
+            })
+        }
 
         ("GET", "/api/ui/theme") => {
             json_response(stream, &ApiResponse::ok(crate::webui_files::load_theme()))
@@ -3863,7 +3876,6 @@ fn serve_file_bytes(stream: &mut TcpStream, req: &HttpRequest) -> Result<()> {
     send_response_with(stream, 200, mime_for_name(&name), &bytes, "")
 }
 
-
 /// 生成展示用的访问地址。
 ///
 /// 用 m.baidu.com 这种真实域名而不是 127.0.0.1，避免地址栏里出现裸 IP
@@ -3884,7 +3896,6 @@ pub fn bind_webui(explicit: Option<u16>) -> Result<(TcpListener, u16)> {
     }
     // 每次启动都重新随机：即使上一轮的端口仍在 webui.port 里，也不复用（规格 7.1）。
     // 服务已在运行时由上层直接复用现有 listener，不会走到这里（规格 7.4）。
-
 
     let span = u32::from(PORT_RANGE_END - PORT_RANGE_START) + 1;
     for _ in 0..PORT_BIND_ATTEMPTS {
@@ -3963,13 +3974,14 @@ fn ensure_state_layout() {
     let _ = std::fs::create_dir_all(defs::STATE_DIR);
 
     // 这四个都是"运行时状态"，只属于 state/。根上出现的任何副本都是历史遗留。
-    for name in [
-        "calculator.pkg",
-        "webui.trigger",
-        "webui.port",
-        "webui.token",
+    // 名字 + 权威路径成对给出，state/ 下那份以 defs 常量为准，不在别处重复写死。
+    for (name, canonical) in [
+        ("calculator.pkg", defs::CALCULATOR_PKG_PATH),
+        ("webui.trigger", defs::WEBUI_TRIGGER_PATH),
+        ("webui.port", defs::WEBUI_PORT_PATH),
+        ("webui.token", defs::WEBUI_TOKEN_PATH),
     ] {
-        let new_path: PathBuf = Path::new(defs::STATE_DIR).join(name);
+        let new_path: PathBuf = PathBuf::from(canonical);
         let old_path: PathBuf = Path::new(defs::WORKING_DIR).join(name);
 
         let Ok(md) = old_path.symlink_metadata() else {
@@ -4263,7 +4275,7 @@ mod tests {
         let handle = thread::spawn(move || serve(listener, Duration::from_secs(900)));
         let token = wait_for_token();
         println!("BROWSER-URL http://127.0.0.1:{port}/?k={token}");
-        handle.join().expect("serve");
+        let _ = handle.join().expect("serve");
     }
 
     #[test]
@@ -4503,7 +4515,10 @@ mod tests {
         icon_db_put("pkg.two", b"payload-two");
         let map = icon_store_load();
         assert_eq!(map.len(), 2, "concurrent puts dropped entries");
-        assert_eq!(map.get("pkg.one").map(|v| v.0.clone()), Some(b"payload-one".to_vec()));
+        assert_eq!(
+            map.get("pkg.one").map(|v| v.0.clone()),
+            Some(b"payload-one".to_vec())
+        );
 
         // 半截文件不能让读的人炸，也不能把库当成有效
         std::fs::write(path, b"PFM").unwrap();
@@ -4533,7 +4548,10 @@ mod tests {
         })
         .expect("save prefs");
         icon_store_clear();
-        assert!(path.exists(), "icon db was cleared even though the setting is off");
+        assert!(
+            path.exists(),
+            "icon db was cleared even though the setting is off"
+        );
         assert!(icon_store_load().contains_key("pkg.kept"));
 
         // 开回来 → 必须删掉

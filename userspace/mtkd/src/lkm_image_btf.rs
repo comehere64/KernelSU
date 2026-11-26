@@ -414,6 +414,43 @@ impl<'a> BtfCandidate<'a> {
         Ok(layouts.into_iter().next())
     }
 
+    /// 从 `enum kernel_load_data_id` 里取出 `LOADING_MODULE` 的值。
+    ///
+    /// 内核的 `load_module()` 用这个枚举区分"真正加载"和"只校验"两种调用，
+    /// 不同版本的内核里枚举顺序变过（LOADING_MODULE 可能是 1，也可能是 2），
+    /// 所以只能从 BTF 里读，不能写死。
+    ///
+    /// 同一份 BTF 里如果有多个 `kernel_load_data_id`（合并过的镜像、重复段），
+    /// 而它们给出的 `LOADING_MODULE` 不是同一个值，就说明这份 BTF 自相矛盾，
+    /// 按任何一种都可能把"校验"当成"加载"跑下去 —— 直接报错，不要猜。
+    fn loading_module_value(&self) -> Result<Option<i32>> {
+        let mut values = BTreeSet::new();
+        for enumeration in self.types.iter().filter(|btf_type| {
+            btf_type.kind == BTF_KIND_ENUM
+                && self.string(btf_type.name_offset) == Some("kernel_load_data_id")
+        }) {
+            // struct btf_enum { __u32 name_off; __s32 val; } —— 每个 8 字节
+            for index in 0..usize::from(enumeration.vlen) {
+                let member = enumeration.payload_offset + index * 8;
+                let Some(name_offset) = read_u32(self.data, member) else {
+                    continue;
+                };
+                if self.string(name_offset) != Some("LOADING_MODULE") {
+                    continue;
+                }
+                let Some(raw) = read_u32(self.data, member + 4) else {
+                    continue;
+                };
+                values.insert(raw as i32);
+            }
+        }
+        ensure!(
+            values.len() <= 1,
+            "BTF contains conflicting LOADING_MODULE values"
+        );
+        Ok(values.into_iter().next())
+    }
+
     fn validate_function_abis(&self) -> Result<()> {
         const EXPECTED_ARITIES: &[(&str, u16)] = &[
             ("load_module", 3),
@@ -460,6 +497,7 @@ impl<'a> BtfCandidate<'a> {
 
     pub fn to_kernel_btf(&self) -> Result<KernelBtf> {
         let load_info = self.load_info_layout()?;
+        let _loading_module = self.loading_module_value()?;
         self.validate_function_abis()?;
         Ok(KernelBtf {
             file_offset: self.file_offset,

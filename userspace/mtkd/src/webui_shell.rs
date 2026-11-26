@@ -1,4 +1,3 @@
-
 #![allow(clippy::all, clippy::pedantic, clippy::nursery)]
 
 use std::collections::HashMap;
@@ -60,7 +59,11 @@ fn safe_cwd(cwd: &str) -> &str {
     let leaky = cwd.contains("com.termux")
         || cwd.starts_with("/data/data/")
         || cwd.starts_with("/data/user/");
-    if leaky || !Path::new(cwd).is_dir() { "/" } else { cwd }
+    if leaky || !Path::new(cwd).is_dir() {
+        "/"
+    } else {
+        cwd
+    }
 }
 
 struct Output {
@@ -511,12 +514,12 @@ mod tests {
         thread::sleep(Duration::from_millis(400));
         let (seen, _) = read(id).expect("read");
         for leak in ["TERMUX", "PREFIX=", "com.termux", "files/home"] {
-            assert!(
-                !seen.contains(leak),
-                "宿主环境泄漏了 {leak}: {seen:?}"
-            );
+            assert!(!seen.contains(leak), "宿主环境泄漏了 {leak}: {seen:?}");
         }
-        assert!(seen.contains("PWD=/") || seen.contains("PWD=/\r"), "缺少 PWD: {seen:?}");
+        assert!(
+            seen.contains("PWD=/") || seen.contains("PWD=/\r"),
+            "缺少 PWD: {seen:?}"
+        );
         close(id).expect("close");
     }
 
@@ -530,8 +533,10 @@ mod tests {
         let (id, _) = open("/").expect("open session");
         write(id, "grep PPid /proc/$$/status\n").expect("write");
         let seen = read_until(id, "PPid:");
-        assert!(seen.contains("PPid:\t1") || seen.contains("PPid: 1") || seen.contains("PPid:\t 1"),
-            "shell 的父进程不是 init: {seen:?}");
+        assert!(
+            seen.contains("PPid:\t1") || seen.contains("PPid: 1") || seen.contains("PPid:\t 1"),
+            "shell 的父进程不是 init: {seen:?}"
+        );
         close(id).expect("close");
     }
 

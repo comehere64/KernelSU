@@ -1235,7 +1235,13 @@ mod tests {
     fn module_id_accepts_real_module_names() {
         // 注意：正则要求首字符是字母、后面至少还有一个字符（`[a-zA-Z]` + `+`），
         // 所以单字符 id 本来就不合法，这里按实际规则列。
-        for good in ["tricky_store", "Zygisk-Next", "a1", "ksu-1.0.2", "My.Module"] {
+        for good in [
+            "tricky_store",
+            "Zygisk-Next",
+            "a1",
+            "ksu-1.0.2",
+            "My.Module",
+        ] {
             assert!(
                 validate_module_id(good).is_ok(),
                 "should accept module id {good:?}"

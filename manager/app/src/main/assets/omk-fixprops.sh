@@ -1,6 +1,10 @@
 #!/system/bin/sh
 # 修正系统属性：把「已解锁 / 可调试」那一面的属性改回正常机器的样子。
 # 由 keyMint 配置页的开关安装，删除该文件即可关闭。
+#
+# Android 的 /system/bin/sh 是 mksh，支持 local / [[ ]] / ==，但 ShellCheck 没有
+# mksh 方言，会按 POSIX sh 报这三个。这里显式关掉，免得 CI 一片红。
+# shellcheck disable=SC3043,SC3010,SC3014
 command -v resetprop >/dev/null 2>&1 || PATH="/data/adb/ksu/bin:/data/adb/magisk:$PATH"
 export PATH
 

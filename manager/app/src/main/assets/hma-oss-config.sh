@@ -16,7 +16,7 @@
 #   HMA_EXTRA_EXCLUDE     额外排除的包；Scene 版传 com.omarea.vtools
 #   HMA_NO_ACCESSIBILITY  非空时不勾「无障碍功能」预设；Scene 版置 1
 PKG=org.frknkrc44.hma_oss
-CONFIG=$(ls /data/misc/hide_my_applist_*/config.json 2>/dev/null | head -1)
+CONFIG=$(find /data/misc -maxdepth 2 -type f -path '*/hide_my_applist_*/config.json' -print -quit 2>/dev/null)
 
 # 没有这一句，下面找不到配置文件时会报「还没生成配置文件」，而实际上可能是压根没装。
 if ! pm list packages | grep -q "^package:$PKG$"; then
@@ -126,6 +126,7 @@ for PKG_NAME in $ALL_USER_PACKAGES; do
         *" $PKG_NAME "*) continue ;;
     esac
     [ "$ADDED" -gt 0 ] && printf ',' >> "$NEW_F"
+    # shellcheck disable=SC2059  # APP_RULE_TEMPLATE 只含 %s 占位符，没有其它 %
     printf "$APP_RULE_TEMPLATE" "$PKG_NAME" "$ALL_APP_PRESETS" "$APPLY_SETTINGS_PRESETS" "$EXTRA_APP_LIST" >> "$NEW_F"
     ADDED=$((ADDED + 1))
 done
@@ -133,7 +134,7 @@ done
 # 已经配过的条目：把两条预设数组补成「全选」。sed 直接读 body 文件、结果写回同一个文件，
 # 顺带把额外隐藏写进 extraAppList。其余字段、别的应用都原样不动。
 WANT_APP='"applyPresets":['"$ALL_APP_PRESETS"']'
-UPGRADED=$(grep -o '"applyPresets":\[[^]]*\]' "$BODY_F" | grep -v -F -x "$WANT_APP" | wc -l | tr -d ' ')
+UPGRADED=$(grep -o '"applyPresets":\[[^]]*\]' "$BODY_F" | grep -c -v -F -x "$WANT_APP" || true)
 CHANGED=0
 sed -e "s#\"applyPresets\":\[[^]]*\]#$WANT_APP#g" \
     -e "s#\"applySettingsPresets\":\[[^]]*\]#\"applySettingsPresets\":[$APPLY_SETTINGS_PRESETS]#g" \

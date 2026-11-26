@@ -230,7 +230,6 @@ fn link_ksud_to_bin() -> Result<()> {
     Ok(())
 }
 
-
 /// 把改名期留下的旧工作目录（/data/adb/oplus_pfm）迁回 /data/adb/ksu。
 ///
 /// 只做一次：新目录已经存在就直接返回。
@@ -267,8 +266,7 @@ fn migrate_working_dir() {
 fn purge_legacy_paths() {
     fn new_module_live() -> bool {
         std::fs::read_to_string("/proc/modules")
-            .map(|s| s.lines().any(|l| l.starts_with("mtk ")))
-            .unwrap_or(false)
+            .is_ok_and(|s| s.lines().any(|l| l.starts_with("mtk ")))
     }
 
     if !new_module_live() {
@@ -284,7 +282,9 @@ fn purge_legacy_paths() {
     ] {
         let path = std::path::Path::new(p);
         // 本文件顶部 use 了 anyhow::Ok，会遮蔽 Result::Ok 枚举变体，必须写全路径
-        let std::result::Result::Ok(md) = path.symlink_metadata() else { continue };
+        let std::result::Result::Ok(md) = path.symlink_metadata() else {
+            continue;
+        };
         if md.file_type().is_symlink() || md.is_file() {
             let _ = std::fs::remove_file(path);
         } else {
@@ -297,9 +297,8 @@ fn purge_legacy_paths() {
 fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) {
     // 注意：本文件顶部 use 了 anyhow::Ok，会遮蔽 Result::Ok 这个枚举变体，
     // 所以这里必须写 std::result::Result::Ok 全路径。
-    let rd = match std::fs::read_dir(src) {
-        std::result::Result::Ok(rd) => rd,
-        std::result::Result::Err(_) => return,
+    let std::result::Result::Ok(rd) = std::fs::read_dir(src) else {
+        return;
     };
     for entry in rd.flatten() {
         let from = entry.path();
@@ -311,7 +310,10 @@ fn copy_dir_all(src: &std::path::Path, dst: &std::path::Path) {
             let _ = std::fs::copy(&from, &to);
             if let std::result::Result::Ok(md) = from.metadata() {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&to, std::fs::Permissions::from_mode(md.permissions().mode()));
+                let _ = std::fs::set_permissions(
+                    &to,
+                    std::fs::Permissions::from_mode(md.permissions().mode()),
+                );
             }
         }
     }
@@ -332,7 +334,10 @@ pub fn install(libadbroot: Option<PathBuf>, data_path: Option<PathBuf>) -> Resul
     // 旧名字留下的软链接清掉，避免 /data/adb 下堆一串历史别名
     for stale in ["/data/adb/opfm", "/data/adb/opfd", "/data/adb/opm"] {
         let lp = std::path::Path::new(stale);
-        if lp.symlink_metadata().map(|m| m.file_type().is_symlink()).unwrap_or(false) {
+        if lp
+            .symlink_metadata()
+            .is_ok_and(|m| m.file_type().is_symlink())
+        {
             let _ = std::fs::remove_file(lp);
         }
     }

@@ -2786,7 +2786,7 @@ mod tests {
     }
 
     fn build_test_btf(types: &[u8], strings: &[u8]) -> Vec<u8> {
-        assert!(!strings.is_empty());
+        assert_ne!(strings.len(), 0);
         let mut output = Vec::new();
         output.extend_from_slice(&0xeb9fu16.to_le_bytes());
         output.extend_from_slice(&[1, 0]);
