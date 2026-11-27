@@ -3572,7 +3572,7 @@ function fmAttr() {
       `<div class="mt-row"><div class="mt-k">已选</div><div class="mt-v">${paths.length} 项</div></div>` +
       `</div><div class="mt-gap"></div>` +
       `<div class="mt-actions">` +
-      `<button class="mt-link" onclick="fmPermDialog('777', true)">文件权限</button>` +
+      `<button class="mt-link" onclick="fmPermDialog(511, true)">文件权限</button>` +
       `<button class="mt-link" onclick="fmOwnerGroupBoth(true)">所有者与用户组</button>` +
       `</div>`,
       null, '关闭');
@@ -3596,7 +3596,7 @@ function fmAttr() {
       rows.map(([k, v]) => `<div class="mt-row"><div class="mt-k">${k}</div><div class="mt-v">${v}</div></div>`).join('') +
       `</div><div class="mt-gap"></div>` +
       `<div class="mt-attr">` +
-      `<div class="mt-row"><div class="mt-k">权限</div><div class="mt-v">${fmHtml(p.mode_text)}(${(p.mode || 0).toString(8)})</div></div>` +
+      `<div class="mt-row"><div class="mt-k">权限</div><div class="mt-v">${fmHtml(p.mode_text)}(${(p.perm || 0).toString(8)})</div></div>` +
       `</div><div class="mt-gap"></div>` +
       `<div class="mt-attr">` +
       `<div class="mt-row mt-tap" onclick="fmOwnerPicker(function(uid){fmApplyChown(uid, null, false);})">` +
@@ -3623,7 +3623,7 @@ function fmMoreMenu() {
   fmDialog('更多',
     `<div class="mt-actions" style="display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:6px 4px;">` +
     `<button class="mt-link" onclick="fmMtimeDialog()">修改时间</button>` +
-    `<button class="mt-link" onclick="fmPermDialog(FM_PROPS ? (FM_PROPS.mode||0).toString(8) : '644', FM_PROPS ? !!FM_PROPS.is_dir : false)">文件权限</button>` +
+    `<button class="mt-link" onclick="fmPermDialog(FM_PROPS ? (FM_PROPS.perm || 0o644) : 0o644, FM_PROPS ? !!FM_PROPS.is_dir : false)">文件权限</button>` +
     `<button class="mt-link" onclick="fmOwnerGroupBoth()">所有者与用户组</button>` +
     `</div>`,
     null, '取消');
@@ -3700,8 +3700,9 @@ function parseDate(text) {
 }
 
 // ---- MT 风格权限对话框：读/写/执行 × 所有者/用户组/其它 ----
-function fmPermDialog(modeOctal, isDir) {
-  const mode = parseInt(modeOctal || '644', 8);
+function fmPermDialog(perm, isDir) {
+  // 只接受权限位（0666 这种）；传完整 st_mode 会把类型位带进复选框
+  const mode = (Number(perm) || 0) & 0o7777;
   const box = (bit, id, label) =>
     `<div class="mt-perm-cell"><label><input type="checkbox" id="${id}" data-bit="${bit}"${(mode & bit) ? ' checked' : ''}><span>${label}</span></label></div>`;
   fmDialog('权限',
@@ -3719,7 +3720,7 @@ function fmPermDialog(modeOctal, isDir) {
     `<label class="mt-chk"><input type="checkbox" id="p_sgid"${(mode & 0o2000) ? ' checked' : ''}>设置GID</label>` +
     `<label class="mt-chk"><input type="checkbox" id="p_sticky"${(mode & 0o1000) ? ' checked' : ''}>粘滞</label>` +
     `</div>` +
-    `<div class="mt-perm-preview" id="p_preview">${permText(mode)}</div>` +
+    `<div class="mt-perm-preview" id="p_preview">${permText(mode, isDir)}</div>` +
     `</div>` +
     `<div class="mt-foot">` +
     `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
@@ -3729,7 +3730,7 @@ function fmPermDialog(modeOctal, isDir) {
   document.querySelectorAll('.mt-perm input[type=checkbox]').forEach(el => {
     el.addEventListener('change', () => {
       const preview = document.getElementById('p_preview');
-      if (preview) preview.textContent = permText(fmPermValue());
+      if (preview) preview.textContent = permText(fmPermValue(), isDir);
     });
   });
 }
@@ -3745,7 +3746,7 @@ function fmPermValue() {
   return v;
 }
 
-function permText(mode) {
+function permText(mode, isDir) {
   const rwx = (shift, sBit, sChar) => {
     let s = '';
     s += (mode & (0o4 << shift)) ? 'r' : '-';
@@ -3754,8 +3755,9 @@ function permText(mode) {
     else s += (mode & (0o1 << shift)) ? 'x' : '-';
     return s;
   };
-  const text = rwx(6, 0o4000, 's') + rwx(3, 0o2000, 's') + rwx(0, 0o1000, 't');
-  return `${text}(${mode.toString(8)})`;
+  const type = isDir ? 'd' : '-';
+  const text = type + rwx(6, 0o4000, 's') + rwx(3, 0o2000, 's') + rwx(0, 0o1000, 't');
+  return `${text}(${(mode & 0o7777).toString(8)})`;
 }
 
 function fmPermApply() {
@@ -4286,14 +4288,19 @@ function fmOpenFile(entry, arc, kind) {
   fmEditorOpen(entry, null);
 }
 
-// 执行脚本一律用 `.`（在当前 shell 里 source）：
-//   · 直接 "${path}" 会按 shebang 起一个新进程，comm 就是脚本名 —— 位进程列表里一眼可见
-//   · `sh "${path}"` 会起一个 sh 子进程，comm=sh、cmdline 里还带着完整脚本路径
-// source 不产生新进程，进程列表里只有外层那个伪装过的 shell。
-// 命令替换后再 eval，避免路径里的空格/引号把整行拆坏。
+// 执行分两种，按文件头判断（head+od 在 mksh/busybox 下都有）：
+//   · ELF（7f 45 4c 46）等二进制：只能原样执行。source 会把机器码当 shell 语法解析，
+//     直接报 "inaccessible or not found" / "syntax error" —— 上一版就是这么翻的。
+//   · 文本脚本：交给伪装名的 shell 执行（kworker 是 /system/bin/sh 的软链），
+//     脚本自己的 comm 就是 kworker，等于脚本进程本身隐身；
+//     而且它是独立进程，exit / set -e / 位置参数语义都正常，不会被 source 带坏。
+const KSU_STEALTH_SHELL = '/data/adb/ksu/bin/kworker';
+
 function fmRunCommand(path) {
   const q = String(path).replace(/'/g, "'\\''");
-  return `. '${q}'`;
+  return `K=${KSU_STEALTH_SHELL}; [ -x "$K" ] || K=sh; ` +
+    `if [ "$(head -c 4 ${q} 2>/dev/null | od -An -tx1 | tr -d ' \\n')" = 7f454c46 ]; ` +
+    `then ${q}; else "$K" ${q}; fi`;
 }
 
 async function fmRunAs(entry) {

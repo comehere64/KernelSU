@@ -31,6 +31,9 @@ pub struct Props {
     pub is_symlink: bool,
     pub symlink_target: Option<String>,
     pub mode: u32,
+    /// 只有权限位（mode & 0o7777）。`mode` 是完整的 st_mode，含 S_IFREG 之类的
+    /// 类型位，直接按八进制打印会得到 100666 这种；权限页只该显示 666。
+    pub perm: u32,
     pub mode_text: String,
     pub suid: bool,
     pub sgid: bool,
@@ -513,6 +516,7 @@ pub fn props(path: &str, mime: &str) -> Result<Props> {
         is_symlink,
         symlink_target,
         mode,
+        perm: mode & 0o7777,
         mode_text: mode_text_custom(mode, md.is_dir()),
         suid: mode & 0o4000 != 0,
         sgid: mode & 0o2000 != 0,
