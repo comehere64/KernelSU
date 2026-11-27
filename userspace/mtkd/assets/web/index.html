@@ -506,6 +506,48 @@ body.modal-open { overflow: hidden; }
     .fm-chk { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); }
     .fm-hash { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
     .fm-hash-out { margin-top: 8px; font-size: 12px; word-break: break-all; color: var(--text-primary); }
+    /* ---- MT 管理器风格的属性面板 ---- */
+    .mt-attr { display: flex; flex-direction: column; }
+    .mt-row { display: flex; gap: 12px; align-items: flex-start; padding: 7px 0; }
+    .mt-k { flex: 0 0 auto; min-width: 76px; color: var(--text-secondary); font-size: 13px; }
+    .mt-v { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--text-primary); word-break: break-all; }
+    .mt-dim { color: var(--text-tertiary); font-size: 12px; }
+    .mt-gap { height: 10px; }
+    .mt-foot { display: flex; justify-content: flex-end; gap: 22px; margin-top: 16px; }
+    .mt-link { background: none; border: 0; padding: 6px 2px; color: var(--accent); font-size: 14px; cursor: pointer; }
+    .mt-kv-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; color: var(--text-primary); }
+    .mt-field input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; }
+    .mt-hash { display: flex; gap: 18px; flex-wrap: wrap; padding: 4px 0 8px; }
+    .mt-hash-out { min-height: 20px; }
+
+    /* 权限九宫格 */
+    .mt-perm { display: flex; flex-direction: column; gap: 4px; }
+    .mt-perm-head { display: grid; grid-template-columns: 64px repeat(3, 1fr); font-size: 12px; color: var(--text-secondary); text-align: center; padding-bottom: 4px; }
+    .mt-perm-head > div:first-child { text-align: left; }
+    .mt-perm-row { display: grid; grid-template-columns: 64px repeat(3, 1fr); align-items: center; padding: 4px 0; }
+    .mt-perm-label { font-size: 13px; color: var(--text-secondary); }
+    .mt-perm-cell { display: flex; justify-content: center; }
+    .mt-perm-cell label { display: inline-flex; align-items: center; }
+    .mt-perm-cell input { width: 20px; height: 20px; accent-color: var(--accent); }
+    .mt-perm-special { text-align: center; font-size: 12px; color: var(--text-secondary); padding: 10px 0 6px; }
+    .mt-perm-special-row { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .mt-chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-primary); }
+    .mt-chk input { width: 18px; height: 18px; accent-color: var(--accent); }
+    .mt-perm-preview { text-align: center; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 14px; color: var(--text-primary); padding: 10px 0 2px; }
+
+    /* 所有者 / 用户组选择器 */
+    .mt-picker { display: flex; flex-direction: column; gap: 8px; max-height: 58vh; }
+    .mt-picker-search input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; }
+    .mt-picker-list { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+    .mt-picker-row { display: flex; align-items: center; gap: 12px; padding: 10px 4px; border-bottom: 1px solid var(--border); cursor: pointer; }
+    .mt-picker-row.on { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+    .mt-picker-icon { flex: 0 0 30px; width: 30px; height: 30px; border-radius: 7px; background: var(--bg-tertiary); display: flex; align-items: center; justify-content: center; font-size: 13px; color: var(--text-secondary); }
+    .mt-picker-text { flex: 1 1 auto; min-width: 0; }
+    .mt-picker-name { font-size: 14px; color: var(--text-primary); word-break: break-all; }
+    .mt-picker-sub { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+    .mt-picker-radio { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); }
+    .mt-picker-radio.on { border-color: var(--accent); background: radial-gradient(circle at center, var(--accent) 0 45%, transparent 46%); }
+
     .fm-share-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
     .fm-share-list .fm-btn { width: 100%; }
     @media (max-width: 480px) {
@@ -744,7 +786,6 @@ body.modal-open { overflow: hidden; }
         <button class="fm-btn" id="fmRootBtn" onclick="fmAddToRoots()">加入快速跳转</button>
         <button class="fm-btn primary" id="fmQuickAddBtn" onclick="fmAddToQuick()">加入便捷执行</button>
         <button class="fm-btn fs-only" onclick="fmAttr()">属性</button>
-        <button class="fm-btn" onclick="fmShare()">分享</button>
         <button class="fm-btn fs-only" onclick="fmRename()">重命名</button>
         <button class="fm-btn danger" onclick="fmDelete()">删除</button>
         <button class="fm-btn" onclick="fmSelectAll()">全选</button>
@@ -3516,208 +3557,316 @@ function fmPropsTable(p) {
 }
 
 let FM_PROPS_PATH = '';
+let FM_PROPS = null;
+let FM_PICKER = null;
 
 function fmAttr() {
   const paths = fmSelPaths();
   if (!paths.length || !fmFsOnly()) return;
   const single = paths.length === 1;
   if (!single) {
-    // 多选：只做批量改权限
     fmDialog('批量属性',
-      `<div class="fm-props">已选 ${paths.length} 项，将批量修改权限 / 属主</div>` +
-      fmModeEditor('777', false),
-      async () => fmApplyAttr(paths, false));
+      `<div class="mt-attr">` +
+      `<div class="mt-row"><div class="mt-k">已选</div><div class="mt-v">${paths.length} 项</div></div>` +
+      `</div><div class="mt-gap"></div>` +
+      `<div class="mt-actions">` +
+      `<button class="mt-link" onclick="fmPermDialog('777', true)">文件权限</button>` +
+      `<button class="mt-link" onclick="fmOwnerPicker(function(uid,gid){fmApplyChown(uid,gid,true);})">所有者与用户组</button>` +
+      `</div>`,
+      null, '关闭');
     return;
   }
 
   FM_PROPS_PATH = paths[0];
   fmApi('/api/fs/props?path=' + fmEsc(paths[0])).then(p => {
+    FM_PROPS = p;
+    const rows = [
+      ['名称', fmHtml(p.name)],
+      ['目录', fmHtml(dirOf(p.path))],
+      ['类型', fmHtml(p.is_dir ? '文件夹' : '文件')],
+      ['大小', fmHtml(p.size_text)],
+      ['修改时间', fmTime(p.mtime) || '—'],
+    ];
+    if (p.is_symlink) rows.push(['链接目标', fmHtml(p.symlink_target || '—')]);
+
     fmDialog('属性',
-      fmPropsTable(p) +
-      `<div class="fm-kv-sec" style="margin-top:14px;">修改权限 / 属主</div>` +
-      fmModeEditor((p.mode || 0).toString(8), !!p.is_dir) +
-      fmFooter('应用'),
-      async () => fmApplyAttr(paths, true));
+      `<div class="mt-attr">` +
+      rows.map(([k, v]) => `<div class="mt-row"><div class="mt-k">${k}</div><div class="mt-v">${v}</div></div>`).join('') +
+      `</div><div class="mt-gap"></div>` +
+      `<div class="mt-attr">` +
+      `<div class="mt-row"><div class="mt-k">权限</div><div class="mt-v">${fmHtml(p.mode_text)}(${(p.mode || 0).toString(8)})</div></div>` +
+      `</div><div class="mt-gap"></div>` +
+      `<div class="mt-attr">` +
+      `<div class="mt-row"><div class="mt-k">所有者</div><div class="mt-v">${fmHtml(p.user_name)}${p.user_name !== String(p.uid) ? ` <span class="mt-dim">(${p.uid})</span>` : ''}</div></div>` +
+      `<div class="mt-row"><div class="mt-k">用户组</div><div class="mt-v">${fmHtml(p.group_name)}${p.group_name !== String(p.gid) ? ` <span class="mt-dim">(${p.gid})</span>` : ''}</div></div>` +
+      `</div>` +
+      `<div class="mt-foot">` +
+      `<button class="mt-link" onclick="fmMoreMenu()">更多</button>` +
+      `<button class="mt-link" onclick="fmChecksum()">校验</button>` +
+      `<button class="mt-link" onclick="fmDialogClose()">关闭</button>` +
+      `</div>`);
   }).catch(e => showToast('读取属性失败：' + e.message));
 }
 
-function fmModeEditor(modeOctal, isDir) {
-  const rwx = (bit, label) =>
-    `<label class="fm-chk"><input type="checkbox" data-bit="${bit}"${((parseInt(modeOctal, 8) & bit) ? ' checked' : '')}>${label}</label>`;
-  return `<div class="fm-props" style="margin-top:6px;">权限（八进制，如 644 / 755）</div>` +
-    `<div class="fm-field"><input type="text" id="fmMode" value="${modeOctal}" placeholder="755"></div>` +
-    `<div class="fm-presets">` +
-    ['777', '755', '644', '600', '700', '000'].map(m =>
-      `<button class="fm-btn" onclick="document.getElementById('fmMode').value='${m}'">${m}</button>`).join('') +
-    `</div>` +
-    `<div class="fm-presets" style="flex-wrap:wrap;">` +
-    rwx(0o400, 'r') + rwx(0o200, 'w') + rwx(0o100, 'x') + '|' +
-    rwx(0o040, 'r') + rwx(0o020, 'w') + rwx(0o010, 'x') + '|' +
-    rwx(0o004, 'r') + rwx(0o002, 'w') + rwx(0o001, 'x') +
-    `</div>` +
-    `<div class="fm-presets" style="flex-wrap:wrap;">` +
-    `<label class="fm-chk"><input type="checkbox" id="fmSuid">suid</label>` +
-    `<label class="fm-chk"><input type="checkbox" id="fmSgid">sgid</label>` +
-    `<label class="fm-chk"><input type="checkbox" id="fmSticky">sticky</label>` +
-    `</div>` +
-    `<div class="fm-field"><label>所有者</label>` +
-    `<input type="text" id="fmOwner" placeholder="留空不改，例如 1017:1017 或 u0_a379:u0_a379"></div>` +
-    `<div class="fm-field"><label>递归</label><input type="checkbox" id="fmAttrRecursive">` +
-    `<span class="fm-dim">目录内所有内容一并处理</span></div>`;
+function dirOf(path) {
+  const i = path.lastIndexOf('/');
+  return i <= 0 ? '/' : path.slice(0, i);
 }
 
-async function fmApplyAttr(paths, single) {
-  const recursive = document.getElementById('fmAttrRecursive').checked;
-  let mode = document.getElementById('fmMode').value.trim();
-  const owner = document.getElementById('fmOwner').value.trim();
+function fmMoreMenu() {
+  fmDialog('更多',
+    `<div class="mt-actions" style="display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:6px 4px;">` +
+    `<button class="mt-link" onclick="fmMtimeDialog()">修改时间</button>` +
+    `<button class="mt-link" onclick="fmPermDialog(FM_PROPS ? (FM_PROPS.mode||0).toString(8) : '644', FM_PROPS ? !!FM_PROPS.is_dir : false)">文件权限</button>` +
+    `<button class="mt-link" onclick="fmOwnerPicker(function(uid,gid){fmApplyChown(uid,gid,false);})">所有者与用户组</button>` +
+    `</div>`,
+    null, '取消');
+}
 
-  // 勾选框优先：有任何勾选就以 rwx 复选为准
-  const boxes = Array.from(document.querySelectorAll('.fm-chk input[data-bit]'));
-  if (boxes.some(b => b.checked)) {
-    let v = 0;
-    boxes.forEach(b => { if (b.checked) v |= Number(b.dataset.bit); });
-    if (document.getElementById('fmSuid').checked) v |= 0o4000;
-    if (document.getElementById('fmSgid').checked) v |= 0o2000;
-    if (document.getElementById('fmSticky').checked) v |= 0o1000;
-    mode = v.toString(8);
+function fmChecksum() {
+  const p = FM_PROPS;
+  if (!p || p.is_dir) {
+    fmDialog('校验', `<div class="mt-attr"><div class="mt-row"><div class="mt-k">提示</div><div class="mt-v">文件夹不做校验</div></div></div>`, null, '关闭');
+    return;
   }
-
-  let ids = null;
-  if (owner) {
-    ids = owner.match(/^(\d+)\s*[:：]\s*(\d+)$/);
-    if (!ids) {
-      // 允许 u0_a379:u0_a379 这种名字形式 → 由后端 resolve
-      ids = null;
-    }
-    if (!ids && !/^[^:：\s]+\s*[:：]\s*[^:：\s]+$/.test(owner)) {
-      throw new Error('所有者要写成 uid:gid 或 用户名:组名');
-    }
-  }
-
-  if (mode) {
-    await fmApi('/api/fs/chmod', {
-      method: 'POST', headers: FM_JSON,
-      body: JSON.stringify({ paths, mode, recursive }),
-    });
-  }
-  if (owner) {
-    if (ids) {
-      await fmApi('/api/fs/chown', {
-        method: 'POST', headers: FM_JSON,
-        body: JSON.stringify({ paths, uid: Number(ids[1]), gid: Number(ids[2]), recursive }),
-      });
-    } else {
-      await fmApi('/api/fs/chown', {
-        method: 'POST', headers: FM_JSON,
-        body: JSON.stringify({ paths, owner, recursive }),
-      });
-    }
-  }
-  showToast('已应用');
-  if (single) {
-    fmDialogClose();
-    fmApi('/api/fs/props?path=' + fmEsc(FM_PROPS_PATH)).then(p => {
-      fmDialog('属性', fmPropsTable(p) + fmModeEditor((p.mode || 0).toString(8), !!p.is_dir) + fmFooter('应用'),
-        async () => fmApplyAttr([FM_PROPS_PATH], true));
-    }).catch(() => {});
-  }
-  fmLoad(0); fmLoad(1);
+  fmDialog('校验',
+    `<div class="mt-hash" id="fmHashBox">` +
+    ['md5', 'sha1', 'sha256'].map(a => `<button class="mt-link" onclick="fmHash('${a}')">${a.toUpperCase()}</button>`).join('') +
+    `</div><div class="mt-hash-out" id="fmHashOut"></div>`,
+    null, '关闭');
 }
 
 function fmHash(algo) {
   const out = document.getElementById('fmHashOut');
-  if (!FM_PROPS_PATH) return;
-  out.textContent = `正在计算 ${algo.toUpperCase()}…`;
+  if (!out || !FM_PROPS_PATH) return;
+  out.textContent = '正在计算 ' + algo.toUpperCase() + '…';
   fmApi('/api/fs/hash?algo=' + algo + '&path=' + fmEsc(FM_PROPS_PATH))
-    .then(r => {
-      out.innerHTML = `<div class="fm-kv"><div class="fm-kv-k">${algo.toUpperCase()}</div>` +
-        `<div class="fm-kv-v fm-mono">${fmHtml(r.digest)}</div></div>`;
-    })
+    .then(r => { out.innerHTML = `<div class="mt-kv-mono">${fmHtml(r.digest)}</div>`; })
     .catch(e => { out.textContent = '计算失败：' + e.message; });
 }
 
-function fmShare() {
-  const paths = fmSelPaths();
-  if (!paths.length) return;
-  const single = paths.length === 1;
-  const name = single ? paths[0].split('/').filter(Boolean).pop() : `${paths.length} 个文件`;
-  fmDialog('分享',
-    `<div class="fm-props">已选 ${paths.length} 项：${fmHtml(name)}</div>` +
-    `<div class="fm-share-list">` +
-    `<button class="fm-btn primary" onclick="fmShareDownload()">下载</button>` +
-    `<button class="fm-btn" onclick="fmShareCopyPath()">复制路径</button>` +
-    `<button class="fm-btn" onclick="fmShareCopyName()">复制名称</button>` +
-    `<button class="fm-btn" onclick="fmShareZip()">打包成 zip</button>` +
-    `</div>` +
-    `<div class="fm-props" style="margin-top:10px;">` +
-    (single ? '单个文件直接下载原始内容；目录或多个文件会先打包再下载。' : '') +
-    `</div>` +
-    `<div class="fm-hash-out" id="fmShareOut"></div>`,
+function fmMtimeDialog() {
+  const p = FM_PROPS;
+  const cur = p ? fmTime(p.mtime) : '';
+  fmDialog('修改时间',
+    `<div class="mt-field"><input type="text" id="fmMtime" value="${fmHtml(cur)}" placeholder="2026-11-25 12:21:56"></div>`,
     null, '关闭');
+  // 底部三个按钮：当前时间 / 取消 / 确定
+  const body = document.getElementById('fmModalBody');
+  body.innerHTML +=
+    `<div class="mt-foot">` +
+    `<button class="mt-link" onclick="fmMtimeNow()">当前时间</button>` +
+    `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
+    `<button class="mt-link" onclick="fmMtimeApply()">确定</button>` +
+    `</div>`;
 }
 
-function fmShareName() {
-  const paths = fmSelPaths();
-  return paths.length === 1
-    ? paths[0].split('/').filter(Boolean).pop()
-    : 'share';
+function fmMtimeNow() {
+  const el = document.getElementById('fmMtime');
+  if (el) el.value = fmtDate(Date.now() / 1000);
 }
 
-function fmShareDownload() {
+function fmMtimeApply() {
+  const el = document.getElementById('fmMtime');
+  const anno = el ? el.value.trim() : '';
+  const sec = parseDate(anno);
+  if (!sec) { showToast('时间格式应为 YYYY-MM-DD HH:mm:ss'); return; }
+  fmApi('/api/fs/mtime', {
+    method: 'POST', headers: FM_JSON,
+    body: JSON.stringify({ path: FM_PROPS_PATH, mtime: sec }),
+  }).then(() => {
+    showToast('已修改');
+    fmDialogClose();
+    fmLoad(0); fmLoad(1);
+  }).catch(e => showToast('失败：' + e.message));
+}
+
+function fmtDate(sec) {
+  const d = new Date(sec * 1000);
+  const p2 = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+}
+
+function parseDate(text) {
+  const m = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})[ T](\d{1,2}):(\d{1,2}):(\d{1,2})$/);
+  if (!m) return null;
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]);
+  return Math.floor(d.getTime() / 1000);
+}
+
+// ---- MT 风格权限对话框：读/写/执行 × 所有者/用户组/其它 ----
+function fmPermDialog(modeOctal, isDir) {
+  const mode = parseInt(modeOctal || '644', 8);
+  const box = (bit, id, label) =>
+    `<div class="mt-perm-cell"><label><input type="checkbox" id="${id}" data-bit="${bit}"${(mode & bit) ? ' checked' : ''}><span>${label}</span></label></div>`;
+  fmDialog('权限',
+    `<div class="mt-perm">` +
+    `<div class="mt-perm-head"><div></div><div>读</div><div>写</div><div>执行</div></div>` +
+    `<div class="mt-perm-row"><div class="mt-perm-label">所有者</div>` +
+    box(0o400, 'p_ur', '') + box(0o200, 'p_uw', '') + box(0o100, 'p_ux', '') + `</div>` +
+    `<div class="mt-perm-row"><div class="mt-perm-label">用户组</div>` +
+    box(0o040, 'p_gr', '') + box(0o020, 'p_gw', '') + box(0o010, 'p_gx', '') + `</div>` +
+    `<div class="mt-perm-row"><div class="mt-perm-label">其它</div>` +
+    box(0o004, 'p_or', '') + box(0o002, 'p_ow', '') + box(0o001, 'p_ox', '') + `</div>` +
+    `<div class="mt-perm-special">---- 特殊权限 ----</div>` +
+    `<div class="mt-perm-special-row">` +
+    `<label class="mt-chk"><input type="checkbox" id="p_suid"${(mode & 0o4000) ? ' checked' : ''}>设置UID</label>` +
+    `<label class="mt-chk"><input type="checkbox" id="p_sgid"${(mode & 0o2000) ? ' checked' : ''}>设置GID</label>` +
+    `<label class="mt-chk"><input type="checkbox" id="p_sticky"${(mode & 0o1000) ? ' checked' : ''}>粘滞</label>` +
+    `</div>` +
+    `<div class="mt-perm-preview" id="p_preview">${permText(mode)}</div>` +
+    `</div>`,
+    null, '');
+  const body = document.getElementById('fmModalBody');
+  body.innerHTML +=
+    `<div class="mt-foot">` +
+    `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
+    `<button class="mt-link" onclick="fmPermApply()">确定</button>` +
+    `</div>`;
+  document.querySelectorAll('.mt-perm input[type=checkbox]').forEach(el => {
+    el.addEventListener('change', () => {
+      const preview = document.getElementById('p_preview');
+      if (preview) preview.textContent = permText(fmPermValue());
+    });
+  });
+}
+
+function fmPermValue() {
+  let v = 0;
+  document.querySelectorAll('.mt-perm input[data-bit]').forEach(el => {
+    if (el.checked) v |= Number(el.dataset.bit);
+  });
+  if (document.getElementById('p_suid').checked) v |= 0o4000;
+  if (document.getElementById('p_sgid').checked) v |= 0o2000;
+  if (document.getElementById('p_sticky').checked) v |= 0o1000;
+  return v;
+}
+
+function permText(mode) {
+  const rwx = (shift, sBit, sChar) => {
+    let s = '';
+    s += (mode & (0o4 << shift)) ? 'r' : '-';
+    s += (mode & (0o2 << shift)) ? 'w' : '-';
+    if (mode & sBit) s += sChar;
+    else s += (mode & (0o1 << shift)) ? 'x' : '-';
+    return s;
+  };
+  const text = rwx(6, 0o4000, 's') + rwx(3, 0o2000, 's') + rwx(0, 0o1000, 't');
+  return `${text}(${mode.toString(8)})`;
+}
+
+function fmPermApply() {
+  const mode = fmPermValue().toString(8);
   const paths = fmSelPaths();
   if (!paths.length) return;
-  if (paths.length === 1) {
-    const st = document.getElementById('fmShareOut');
-    st.innerHTML = `<a class="fm-btn primary" href="/api/fs/raw?path=${fmEsc(paths[0])}" download>点击开始下载</a>`;
+  fmApi('/api/fs/chmod', {
+    method: 'POST', headers: FM_JSON,
+    body: JSON.stringify({ paths, mode, recursive: true }),
+  }).then(() => {
+    showToast('已修改权限');
+    fmDialogClose();
+    if (FM_PROPS_PATH) fmApi('/api/fs/props?path=' + fmEsc(FM_PROPS_PATH)).then(p => { FM_PROPS = p; }).catch(() => {});
+    fmLoad(0); fmLoad(1);
+  }).catch(e => showToast('失败：' + e.message));
+}
+
+// ---- MT 风格所有者 / 用户组选择：列表 + 搜索 ----
+function fmOwnerPicker(onPick) {
+  fmPickerPage('所有者', '/api/fs/users', (item) => {
+    const uid = item.id;
+    const cur = FM_PROPS ? FM_PROPS.gid : uid;
+    onPick(uid, cur);
+    fmDialogClose();
+  }, 'u0_a333');
+}
+
+function fmGroupPicker(onPick) {
+  fmPickerPage('用户组', '/api/fs/groups', (item) => {
+    const gid = item.id;
+    const cur = FM_PROPS ? FM_PROPS.uid : gid;
+    onPick(cur, gid);
+    fmDialogClose();
+  }, 'media_rw');
+}
+
+function fmPickerPage(title, api, onPick, placeholder) {
+  fmDialog(title,
+    `<div class="mt-picker">` +
+    `<div class="mt-picker-search"><input type="text" id="mtPickerQ" placeholder="${fmHtml(placeholder)}" autocomplete="off"></div>` +
+    `<div class="mt-picker-list" id="mtPickerList"><div class="mt-dim" style="padding:12px;">加载中…</div></div>` +
+    `</div>`,
+    null, '');
+  const body = document.getElementById('fmModalBody');
+  body.innerHTML +=
+    `<div class="mt-foot">` +
+    `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
+    `<button class="mt-link" onclick="fmPickerConfirm()">确定</button>` +
+    `</div>`;
+
+  fmApi(api).then(list => {
+    FM_PICKER = { title, list: list || [], onPick, selected: -1 };
+    fmPickerRender('');
+    const q = document.getElementById('mtPickerQ');
+    if (q) q.addEventListener('input', () => fmPickerRender(q.value.trim()));
+  }).catch(e => {
+    const box = document.getElementById('mtPickerList');
+    if (box) box.textContent = '加载失败：' + e.message;
+  });
+}
+
+function fmPickerRender(filter) {
+  const box = document.getElementById('mtPickerList');
+  if (!box || !FM_PICKER) return;
+  const list = FM_PICKER.list || [];
+  const f = (filter || '').toLowerCase();
+  const rows = list.filter(it => {
+    if (!f) return true;
+    return String(it.name).toLowerCase().includes(f) ||
+      String(it.id).includes(f) ||
+      String(it.label || '').toLowerCase().includes(f);
+  });
+  if (!rows.length) {
+    box.innerHTML = `<div class="mt-dim" style="padding:12px;">没有匹配项</div>`;
     return;
   }
-  fmShareZip();
+  box.innerHTML = rows.map(it => {
+    const on = FM_PICKER.selected === it.id;
+    return `<div class="mt-picker-row${on ? ' on' : ''}" onclick="fmPickerSelect(${it.id})">` +
+      `<div class="mt-picker-icon">${fmHtml(String(it.name || '?').slice(0, 1).toUpperCase())}</div>` +
+      `<div class="mt-picker-text">` +
+      `<div class="mt-picker-name">${fmHtml(it.name)} <span class="mt-dim">(${it.id})</span></div>` +
+      (it.label ? `<div class="mt-picker-sub">${fmHtml(it.label)}</div>` : '') +
+      `</div>` +
+      `<div class="mt-picker-radio${on ? ' on' : ''}"></div>` +
+      `</div>`;
+  }).join('');
 }
 
-function fmShareCopyPath() {
+function fmPickerSelect(id) {
+  if (!FM_PICKER) return;
+  FM_PICKER.selected = id;
+  const q = document.getElementById('mtPickerQ');
+  fmPickerRender(q ? q.value.trim() : '');
+}
+
+function fmPickerConfirm() {
+  if (!FM_PICKER || FM_PICKER.selected < 0) { showToast('先选一个'); return; }
+  const item = (FM_PICKER.list || []).find(it => it.id === FM_PICKER.selected);
+  if (item && FM_PICKER.onPick) FM_PICKER.onPick(item);
+}
+
+function fmApplyChown(uid, gid, recursive) {
   const paths = fmSelPaths();
-  const text = paths.join('\n');
-  fmCopy(text, '已复制路径');
-}
-
-function fmShareCopyName() {
-  fmCopy(fmShareName(), '已复制名称');
-}
-
-function fmCopy(text, okMsg) {
-  const done = () => showToast(okMsg || '已复制');
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(text).then(done).catch(() => fmCopyFallback(text, done));
-  } else {
-    fmCopyFallback(text, done);
-  }
-}
-
-function fmCopyFallback(text, done) {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  ta.style.position = 'fixed';
-  ta.style.opacity = '0';
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); done(); } catch (e) { showToast('复制失败'); }
-  document.body.removeChild(ta);
-}
-
-function fmShareZip() {
-  const paths = fmSelPaths();
-  const out = document.getElementById('fmShareOut');
   if (!paths.length) return;
-  out.textContent = '正在打包…';
-  fmApi('/api/fs/share', {
+  fmApi('/api/fs/chown', {
     method: 'POST', headers: FM_JSON,
-    body: JSON.stringify({ paths, name: fmShareName() }),
-  }).then(r => {
-    out.innerHTML = `<div class="fm-props">已打包：${fmHtml(r.name)}（${fmHtml(r.size_text)}）` +
-      `<br>位置：${fmHtml(r.path)}</div>` +
-      `<a class="fm-btn primary" style="margin-top:8px;" href="/api/fs/raw?path=${fmEsc(r.path)}" download="${fmHtml(r.name)}">下载 zip</a>`;
-  }).catch(e => { out.textContent = '打包失败：' + e.message; });
+    body: JSON.stringify({ paths, uid, gid, recursive }),
+  }).then(() => {
+    showToast('已修改所有者');
+    fmLoad(0); fmLoad(1);
+  }).catch(e => showToast('失败：' + e.message));
 }
+
 function fmAllRoots() {
   return (FM.builtinRoots || []).map(r => ({ name: r.label, path: r.path, builtin: true }))
     .concat((FM.customRoots || []).map(r => ({ name: r.name, path: r.path, builtin: false })));

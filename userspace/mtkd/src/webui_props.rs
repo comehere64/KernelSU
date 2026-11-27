@@ -771,98 +771,191 @@ pub fn hash_file(_path: &str, _algo: &str) -> Result<String> {
     bail!("当前平台不支持计算哈希")
 }
 
-// ---------- 分享：打包 ----------
+// ---------- 属主 / 用户组候选列表 ----------
 
-/// 把若干文件/目录打成一个 zip，落在 `share_dir` 下，返回 (完整路径, 文件名, 大小)。
-///
-/// 网页端没法直接调 Android 的系统分享（file:// 在 7.0 之后被 FileUriExposure 挡掉，
-/// 而 daemon 侧没有 FileProvider），所以「分享」落到最实用的一条：打成 zip 交给浏览器下载。
+#[derive(Serialize, Default, Clone)]
+pub struct OwnerEntry {
+    pub id: u32,
+    pub name: String,
+    /// 应用名（uid 对应到某个已安装应用时才有），MT 里显示在第二行
+    pub label: String,
+}
+
+/// 读 passwd 风格的文本，返回 (id, name)。
 #[cfg(target_os = "android")]
-pub fn zip_paths(
-    paths: &[String],
-    base_name: &str,
-    share_dir: &str,
-) -> Result<(String, String, u64)> {
-    use std::io::Write;
-    use zip::write::SimpleFileOptions;
-
-    fn add_entry<W: Write + std::io::Seek>(
-        zip: &mut zip::ZipWriter<W>,
-        opts: SimpleFileOptions,
-        real: &std::path::Path,
-        stored: &str,
-    ) -> Result<()> {
-        let md = std::fs::symlink_metadata(real)?;
-        if md.is_dir() {
-            zip.add_directory(format!("{stored}/"), opts)?;
-            let mut children: Vec<_> = std::fs::read_dir(real)?
-                .flatten()
-                .map(|e| e.path())
-                .collect();
-            children.sort();
-            for child in children {
-                let name = child
-                    .file_name()
-                    .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
-                add_entry(zip, opts, &child, &format!("{stored}/{name}"))?;
-            }
-        } else {
-            zip.start_file(stored, opts)?;
-            let mut src = std::fs::File::open(real)?;
-            std::io::copy(&mut src, zip)?;
-        }
-        Ok(())
-    }
-
-    if paths.is_empty() {
-        bail!("没有选中任何文件");
-    }
-    std::fs::create_dir_all(share_dir).with_context(|| format!("创建 {share_dir} 失败"))?;
-
-    let safe: String = base_name
-        .chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
-                c
-            } else {
-                '_'
-            }
+fn parse_passwd_file(path: &str) -> Vec<(u32, String)> {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter(|line| !line.starts_with('#'))
+        .filter_map(|line| {
+            let mut parts = line.split(':');
+            let name = parts.next()?.trim().to_string();
+            parts.next()?; // 密码占位
+            let id = parts.next()?.trim().parse::<u32>().ok()?;
+            (!name.is_empty()).then_some((id, name))
         })
-        .collect();
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
-    let file_name = format!("{safe}_{stamp}.zip");
-    let out_path = std::path::Path::new(share_dir).join(&file_name);
+        .collect()
+}
 
-    let file = std::fs::File::create(&out_path)
-        .with_context(|| format!("创建 {} 失败", out_path.display()))?;
-    let mut zip = zip::ZipWriter::new(file);
-    let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+/// Android 的固定 AID。设备上不一定有 /system/etc/group，这些是 AOSP 里的常量，
+/// MT 列表里那一串 media_rw / mtp / nfc … 就来自这里。
+const KNOWN_GROUPS: &[(u32, &str)] = &[
+    (0, "root"),
+    (1000, "system"),
+    (1001, "radio"),
+    (1002, "bluetooth"),
+    (1003, "graphics"),
+    (1004, "input"),
+    (1005, "audio"),
+    (1006, "camera"),
+    (1007, "log"),
+    (1008, "compass"),
+    (1009, "mount"),
+    (1010, "wifi"),
+    (1011, "adb"),
+    (1012, "install"),
+    (1013, "media"),
+    (1014, "dhcp"),
+    (1015, "sdcard_rw"),
+    (1016, "vpn"),
+    (1017, "keystore"),
+    (1018, "usb"),
+    (1019, "drm"),
+    (1020, "mdnsr"),
+    (1021, "gps"),
+    (1022, "media_rw"),
+    (1023, "media_rw"),
+    (1024, "mtp"),
+    (1025, "nfc"),
+    (1026, "drmrpc"),
+    (1028, "sdcard_r"),
+    (1029, "clat"),
+    (1030, "loop_radio"),
+    (1031, "mediadrm"),
+    (1032, "package_info"),
+    (1033, "sdcard_pics"),
+    (1034, "sdcard_av"),
+    (1035, "sdcard_audio"),
+    (1036, "sdcard_all"),
+    (1037, "logd"),
+    (1038, "shared_relro"),
+    (1039, "bd_list"),
+    (1040, "webview_zygote"),
+    (1041, "media_audio"),
+    (1042, "media_video"),
+    (1043, "media_image"),
+    (1044, "tombstoned"),
+    (1045, "media_gid"),
+    (1046, "external_storage"),
+    (1047, "ext_data_rw"),
+    (1048, "ext_obb_rw"),
+    (1049, "traced_producer"),
+    (1050, "traced_consumer"),
+    (1051, "incidentd"),
+    (1052, "default_system"),
+    (1053, "media_codec"),
+    (2000, "shell"),
+    (2001, "cache"),
+    (3001, "net_bt_admin"),
+    (3002, "net_bt"),
+    (3003, "inet"),
+    (3004, "net_raw"),
+    (3005, "net_admin"),
+    (3009, "readproc"),
+    (3010, "wakelock"),
+    (3011, "uhid"),
+];
 
-    for path in paths {
-        let real = std::path::Path::new(path);
-        if !real.exists() && std::fs::symlink_metadata(real).is_err() {
-            continue;
+#[cfg(target_os = "android")]
+pub fn list_owners() -> Vec<OwnerEntry> {
+    use std::collections::BTreeMap;
+
+    // uid -> (name, label)
+    let mut map: BTreeMap<u32, (String, String)> = BTreeMap::new();
+
+    for path in [
+        "/system/etc/passwd",
+        "/vendor/etc/passwd",
+        "/product/etc/passwd",
+    ] {
+        for (id, name) in parse_passwd_file(path) {
+            map.insert(id, (name, String::new()));
         }
-        let name = real
-            .file_name()
-            .map_or_else(|| "item".to_string(), |n| n.to_string_lossy().into_owned());
-        add_entry(&mut zip, opts, real, &name)?;
     }
-    zip.finish()?;
 
-    let size = std::fs::metadata(&out_path).map_or(0, |m| m.len());
-    Ok((out_path.display().to_string(), file_name, size))
+    // 已安装应用：uid 在 10000 以上，MT 会在第二行显示应用名。
+    for (uid, label) in crate::webui::apps_snapshot() {
+        let name = format!("u{}_{}", uid / 100_000, uid % 100_000);
+        map.insert(uid, (name, label));
+    }
+
+    map.into_iter()
+        .map(|(id, (name, label))| OwnerEntry { id, name, label })
+        .collect()
 }
 
 #[cfg(not(target_os = "android"))]
-pub fn zip_paths(
-    _paths: &[String],
-    _base_name: &str,
-    _share_dir: &str,
-) -> Result<(String, String, u64)> {
-    bail!("当前平台不支持打包分享")
+pub fn list_owners() -> Vec<OwnerEntry> {
+    Vec::new()
+}
+
+#[cfg(target_os = "android")]
+pub fn list_groups() -> Vec<OwnerEntry> {
+    use std::collections::BTreeMap;
+
+    let mut map: BTreeMap<u32, (String, String)> = BTreeMap::new();
+    for path in [
+        "/system/etc/group",
+        "/vendor/etc/group",
+        "/product/etc/group",
+    ] {
+        for (id, name) in parse_passwd_file(path) {
+            map.insert(id, (name, "系统".to_string()));
+        }
+    }
+    for &(id, name) in KNOWN_GROUPS {
+        map.entry(id)
+            .or_insert_with(|| (name.to_string(), "系统".to_string()));
+    }
+
+    map.into_iter()
+        .map(|(id, (name, label))| OwnerEntry { id, name, label })
+        .collect()
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn list_groups() -> Vec<OwnerEntry> {
+    Vec::new()
+}
+
+/// 改修改时间（`touch -d` 的等价物）。秒级。
+#[cfg(unix)]
+pub fn set_mtime(path: &str, mtime: i64) -> Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let cpath = std::ffi::CString::new(std::path::Path::new(path).as_os_str().as_bytes())?;
+    let times = [
+        libc::timespec {
+            tv_sec: mtime as libc::time_t,
+            tv_nsec: 0,
+        },
+        libc::timespec {
+            tv_sec: mtime as libc::time_t,
+            tv_nsec: 0,
+        },
+    ];
+    let rc = unsafe { libc::utimensat(libc::AT_FDCWD, cpath.as_ptr(), times.as_ptr(), 0) };
+    if rc != 0 {
+        return Err(std::io::Error::last_os_error())
+            .with_context(|| format!("修改 {path} 的时间失败"));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+pub fn set_mtime(_path: &str, _mtime: i64) -> Result<()> {
+    bail!("当前平台不支持修改时间")
 }
 
 #[cfg(test)]

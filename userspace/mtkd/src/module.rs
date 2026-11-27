@@ -321,7 +321,11 @@ pub fn exec_script_with<T: AsRef<Path>>(
 
     let sigchld = SigchldBlock::block().context("Failed to block SIGCHLD")?;
     let original_sigmask = sigchld.previous;
-    let mut command = Command::new(assets::BUSYBOX_PATH);
+    // 伪装：脚本用 BINARY_DIR 下那个 kworker 之类的软链执行，
+    // /proc/pid/comm 与 cmdline 都变成伪装名（见 stealth 模块）。
+    let (stealth_shell, stealth_name) = crate::stealth::stealth_shell();
+    let script = crate::stealth::stealth_script_command(path.as_ref(), &stealth_name);
+    let mut command = Command::new(&stealth_shell);
     unsafe {
         command.pre_exec(move || {
             if libc::sigprocmask(
@@ -340,8 +344,9 @@ pub fn exec_script_with<T: AsRef<Path>>(
     };
     command
         .current_dir(path.as_ref().parent().unwrap())
-        .arg("sh")
-        .arg(path.as_ref())
+        .arg0(stealth_name)
+        .arg("-c")
+        .arg(&script)
         .envs(get_common_script_envs(validated_module_id));
     configure(&mut command);
 
