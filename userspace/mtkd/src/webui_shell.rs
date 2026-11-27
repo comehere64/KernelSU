@@ -25,8 +25,14 @@ const ROOT_SHELL_PATH: &str = "/product/bin:/apex/com.android.runtime/bin:/apex/
 
 #[cfg(target_os = "android")]
 fn shell_env(dir: &str) -> Vec<(String, String)> {
+    // 把 BINARY_DIR 放到 PATH 最前面：伪装名的 shell 链接放在那里，
+    // alias 里的 `kworker` 才解析得到。
+    let path = format!("{}{}", crate::defs::BINARY_DIR, ROOT_SHELL_PATH);
+    // ENV 让 mksh 在交互式启动时 source 它——里面把 sh/bash/ash alias 到伪装名。
+    let rc = crate::stealth::ensure_stealth_rc();
     vec![
-        ("PATH".into(), ROOT_SHELL_PATH.into()),
+        ("PATH".into(), path),
+        ("ENV".into(), rc.display().to_string()),
         ("SHELL".into(), crate::defs::SHELL_PATH.into()),
         ("TERM".into(), "xterm-256color".into()),
         ("HOME".into(), "/data/local/tmp".into()),

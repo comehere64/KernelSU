@@ -519,7 +519,7 @@ pub fn props(path: &str, mime: &str) -> Result<Props> {
         sticky: mode & 0o1000 != 0,
         uid: md.uid(),
         gid: md.gid(),
-        user_name: user_name(md.uid()),
+        user_name: android_uid_name(md.uid()),
         group_name: group_name(md.gid()),
         nlink: md.nlink(),
         inode: md.ino(),
@@ -799,6 +799,79 @@ fn parse_passwd_file(path: &str) -> Vec<(u32, String)> {
         .collect()
 }
 
+/// uid → Android 风格的显示名。
+///
+/// 规则（`system/core/libcutils`）：app uid = user_id * 100000 + 10000 + app_id，
+/// 显示成 `u<user>_a<app_id>`。所以 10379 应该是 `u0_a379`，不是 `u0_a10379`。
+pub fn android_uid_name(uid: u32) -> String {
+    if uid == 0 {
+        return "root".to_string();
+    }
+    if uid < 10_000 {
+        // 先用 passwd（OEM 会塞自己的条目，比如 system_ucenter:6490），
+        // 查不到再退回 AOSP 内置表，最后是裸数字。
+        let passwd = user_name(uid);
+        if passwd != uid.to_string() {
+            return passwd;
+        }
+        return KNOWN_UIDS
+            .iter()
+            .find(|(id, _)| *id == uid)
+            .map_or_else(|| uid.to_string(), |(_, name)| (*name).to_string());
+    }
+    let user = uid / 100_000;
+    let suffix = uid % 100_000;
+    if suffix >= 10_000 {
+        format!("u{user}_a{}", suffix - 10_000)
+    } else {
+        // 10000 以下是系统 AID 段，不该走到这里
+        uid.to_string()
+    }
+}
+
+/// Android 上常见系统 uid（AOSP `android_filesystem_config.h`）。
+const KNOWN_UIDS: &[(u32, &str)] = &[
+    (0, "root"),
+    (1000, "system"),
+    (1001, "radio"),
+    (1002, "bluetooth"),
+    (1003, "graphics"),
+    (1004, "input"),
+    (1005, "audio"),
+    (1006, "camera"),
+    (1007, "log"),
+    (1008, "compass"),
+    (1009, "mount"),
+    (1010, "wifi"),
+    (1011, "adb"),
+    (1012, "install"),
+    (1013, "media"),
+    (1014, "dhcp"),
+    (1015, "sdcard_rw"),
+    (1016, "vpn"),
+    (1017, "keystore"),
+    (1018, "usb"),
+    (1019, "drm"),
+    (1020, "mdnsr"),
+    (1021, "gps"),
+    (1022, "media_rw"),
+    (1023, "media_rw"),
+    (1024, "mtp"),
+    (1025, "nfc"),
+    (1026, "drmrpc"),
+    (1027, "nfc"),
+    (2000, "shell"),
+    (2001, "cache"),
+    (3001, "net_bt_admin"),
+    (3002, "net_bt"),
+    (3003, "inet"),
+    (3004, "net_raw"),
+    (3005, "net_admin"),
+    (9997, "everybody"),
+    (9998, "misc"),
+    (9999, "nobody"),
+];
+
 /// Android 的固定 AID。设备上不一定有 /system/etc/group，这些是 AOSP 里的常量，
 /// MT 列表里那一串 media_rw / mtp / nfc … 就来自这里。
 const KNOWN_GROUPS: &[(u32, &str)] = &[
@@ -887,8 +960,7 @@ pub fn list_owners() -> Vec<OwnerEntry> {
 
     // 已安装应用：uid 在 10000 以上，MT 会在第二行显示应用名。
     for (uid, label) in crate::webui::apps_snapshot() {
-        let name = format!("u{}_{}", uid / 100_000, uid % 100_000);
-        map.insert(uid, (name, label));
+        map.insert(uid, (android_uid_name(uid), label));
     }
 
     map.into_iter()

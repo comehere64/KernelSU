@@ -15,24 +15,13 @@
 
 use std::path::PathBuf;
 
-/// 伪装名池。全部是内核线程风格，`ps -A` 里本来就一堆类似条目。
-const STEALTH_NAMES: &[&str] = &[
-    "kworker",
-    "ksoftirqd",
-    "jbd2",
-    "rcu_gp",
-    "kdevtmpfs",
-    "kcompactd",
-    "kblockd",
-];
+/// 伪装名。
+///
+/// 必须是固定值：交互式 shell 里的 alias 要指向它，名字一变 alias 就悬空了。
+const STEALTH_NAME: &str = "kworker";
 
-/// 每次取一个"看起来随机但稳定"的伪装名。
-fn pick_name() -> &'static str {
-    let seed = std::process::id() as usize
-        ^ std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.subsec_nanos() as usize);
-    STEALTH_NAMES[seed % STEALTH_NAMES.len()]
+const fn pick_name() -> &'static str {
+    STEALTH_NAME
 }
 
 /// 返回 (可执行文件路径, argv[0]) —— 两者都是伪装名。
@@ -61,6 +50,39 @@ pub fn stealth_shell() -> (PathBuf, String) {
         PathBuf::from(crate::defs::SHELL_PATH),
         "kworker".to_string(),
     )
+}
+
+/// 终端启动用的 rc：把 `sh` / `bash` / `ash` 都 alias 到伪装名。
+///
+/// 交互式敲 `sh xxx.sh` 时，alias 会把它变成 `kworker xxx.sh` —— 仍然是**一个**进程，
+/// 而 comm 取自被 exec 的路径，所以是 kworker，不是 sh。
+/// （`./xxx.sh` 直接执行的情况管不到：那是内核按 shebang 起的新进程。）
+#[cfg(target_os = "android")]
+pub fn ensure_stealth_rc() -> std::path::PathBuf {
+    use std::io::Write;
+
+    let rc = std::path::Path::new(crate::defs::WORKING_DIR).join(".webui_env");
+    let body = format!(
+        "# 网页端终端 / su 会话自动 source 的启动文件（由 mtkd 生成，别手改）\n\
+         [ -f {ksurc} ] && . {ksurc}\n\
+         alias sh={name}\n\
+         alias ash={name}\n\
+         alias bash={name}\n",
+        ksurc = crate::stealth::quote_sh(crate::defs::KSURC_PATH),
+        name = crate::stealth::quote_sh(STEALTH_NAME),
+    );
+    if std::fs::read_to_string(&rc).ok().as_deref() != Some(body.as_str()) {
+        let _ = std::fs::create_dir_all(crate::defs::WORKING_DIR);
+        if let Ok(mut file) = std::fs::File::create(&rc) {
+            let _ = file.write_all(body.as_bytes());
+        }
+    }
+    rc
+}
+
+#[cfg(not(target_os = "android"))]
+pub fn ensure_stealth_rc() -> std::path::PathBuf {
+    std::path::PathBuf::from("/dev/null")
 }
 
 /// 供 `exec_script` 用：把脚本包成一条 `sh -c` 命令。
@@ -121,14 +143,13 @@ mod tests {
     }
 
     #[test]
-    fn stealth_names_are_kernel_thread_style() {
-        for name in STEALTH_NAMES {
-            assert!(name.len() <= 15, "{name} 超过 TASK_COMM_LEN 限长");
-            assert!(
-                name.chars()
-                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
-                "{name} 不像内核线程名"
-            );
-        }
+    fn stealth_name_is_kernel_thread_style() {
+        let name = STEALTH_NAME;
+        assert!(name.len() <= 15, "{name} 超过 TASK_COMM_LEN 限长");
+        assert!(
+            name.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_'),
+            "{name} 不像内核线程名"
+        );
     }
 }

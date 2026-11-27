@@ -2302,9 +2302,9 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
 
         ("POST", "/api/fs/chown") => rooted_ok(stream, req, |body: FsOwner| {
             // 两种写法都收：{uid,gid} 或 {owner:"user:group"}
+            // 缺省的那一半用 u32::MAX 传给 chown，也就是 POSIX 的 -1 = 不改。
             let (uid, gid) = if body.owner.trim().is_empty() {
-                let uid = body.uid.context("缺少 uid")?;
-                (uid, body.gid.unwrap_or(uid))
+                (body.uid.unwrap_or(u32::MAX), body.gid.unwrap_or(u32::MAX))
             } else {
                 crate::webui_files::resolve_owner(body.owner.trim())?
             };

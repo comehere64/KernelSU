@@ -317,9 +317,11 @@ pub fn root_shell() -> Result<()> {
     // add /data/adb/ksu/bin to PATH
     add_path_to_env(defs::BINARY_DIR)?;
 
-    // when KSURC_PATH exists and ENV is not set, set ENV to KSURC_PATH
-    if PathBuf::from(defs::KSURC_PATH).exists() && env::var("ENV").is_err() {
-        command.env("ENV", defs::KSURC_PATH);
+    // 交互式 shell 的启动文件：rc 里先 source 用户的 .ksurc，再把 sh/bash/ash
+    // alias 到伪装名，这样 `sh xxx.sh` 起来的是 kworker 而不是 sh。
+    let rc = crate::stealth::ensure_stealth_rc();
+    if rc.exists() && env::var("ENV").is_err() {
+        command.env("ENV", rc);
     }
 
     if ksu_no_new_privs {

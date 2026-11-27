@@ -513,6 +513,8 @@ body.modal-open { overflow: hidden; }
     .mt-v { flex: 1 1 auto; min-width: 0; font-size: 13px; color: var(--text-primary); word-break: break-all; }
     .mt-dim { color: var(--text-tertiary); font-size: 12px; }
     .mt-gap { height: 10px; }
+    .mt-tap { cursor: pointer; }
+    .mt-tap:active { opacity: .6; }
     .mt-foot { display: flex; justify-content: flex-end; gap: 22px; margin-top: 16px; }
     .mt-link { background: none; border: 0; padding: 6px 2px; color: var(--accent); font-size: 14px; cursor: pointer; }
     .mt-kv-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; color: var(--text-primary); }
@@ -3571,7 +3573,7 @@ function fmAttr() {
       `</div><div class="mt-gap"></div>` +
       `<div class="mt-actions">` +
       `<button class="mt-link" onclick="fmPermDialog('777', true)">文件权限</button>` +
-      `<button class="mt-link" onclick="fmOwnerPicker(function(uid,gid){fmApplyChown(uid,gid,true);})">所有者与用户组</button>` +
+      `<button class="mt-link" onclick="fmOwnerGroupBoth(true)">所有者与用户组</button>` +
       `</div>`,
       null, '关闭');
     return;
@@ -3597,8 +3599,10 @@ function fmAttr() {
       `<div class="mt-row"><div class="mt-k">权限</div><div class="mt-v">${fmHtml(p.mode_text)}(${(p.mode || 0).toString(8)})</div></div>` +
       `</div><div class="mt-gap"></div>` +
       `<div class="mt-attr">` +
-      `<div class="mt-row"><div class="mt-k">所有者</div><div class="mt-v">${fmHtml(p.user_name)}${p.user_name !== String(p.uid) ? ` <span class="mt-dim">(${p.uid})</span>` : ''}</div></div>` +
-      `<div class="mt-row"><div class="mt-k">用户组</div><div class="mt-v">${fmHtml(p.group_name)}${p.group_name !== String(p.gid) ? ` <span class="mt-dim">(${p.gid})</span>` : ''}</div></div>` +
+      `<div class="mt-row mt-tap" onclick="fmOwnerPicker(function(uid){fmApplyChown(uid, null, false);})">` +
+      `<div class="mt-k">所有者</div><div class="mt-v">${fmHtml(p.user_name)} <span class="mt-dim">(${p.uid})</span></div></div>` +
+      `<div class="mt-row mt-tap" onclick="fmGroupPicker(function(gid){fmApplyChown(null, gid, false);})">` +
+      `<div class="mt-k">用户组</div><div class="mt-v">${fmHtml(p.group_name)} <span class="mt-dim">(${p.gid})</span></div></div>` +
       `</div>` +
       `<div class="mt-foot">` +
       `<button class="mt-link" onclick="fmMoreMenu()">更多</button>` +
@@ -3620,7 +3624,7 @@ function fmMoreMenu() {
     `<div class="mt-actions" style="display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:6px 4px;">` +
     `<button class="mt-link" onclick="fmMtimeDialog()">修改时间</button>` +
     `<button class="mt-link" onclick="fmPermDialog(FM_PROPS ? (FM_PROPS.mode||0).toString(8) : '644', FM_PROPS ? !!FM_PROPS.is_dir : false)">文件权限</button>` +
-    `<button class="mt-link" onclick="fmOwnerPicker(function(uid,gid){fmApplyChown(uid,gid,false);})">所有者与用户组</button>` +
+    `<button class="mt-link" onclick="fmOwnerGroupBoth()">所有者与用户组</button>` +
     `</div>`,
     null, '取消');
 }
@@ -3650,17 +3654,16 @@ function fmHash(algo) {
 function fmMtimeDialog() {
   const p = FM_PROPS;
   const cur = p ? fmTime(p.mtime) : '';
+  // 底部按钮必须和输入框一起拼进初始 HTML：
+  // 事后 body.innerHTML += 会重建 DOM，用户已经输入的字符会被冲掉。
   fmDialog('修改时间',
-    `<div class="mt-field"><input type="text" id="fmMtime" value="${fmHtml(cur)}" placeholder="2026-11-25 12:21:56"></div>`,
-    null, '关闭');
-  // 底部三个按钮：当前时间 / 取消 / 确定
-  const body = document.getElementById('fmModalBody');
-  body.innerHTML +=
+    `<div class="mt-field"><input type="text" id="fmMtime" value="${fmHtml(cur)}" placeholder="2026-11-25 12:21:56"></div>` +
     `<div class="mt-foot">` +
     `<button class="mt-link" onclick="fmMtimeNow()">当前时间</button>` +
     `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
     `<button class="mt-link" onclick="fmMtimeApply()">确定</button>` +
-    `</div>`;
+    `</div>`,
+    null, '关闭');
 }
 
 function fmMtimeNow() {
@@ -3717,14 +3720,12 @@ function fmPermDialog(modeOctal, isDir) {
     `<label class="mt-chk"><input type="checkbox" id="p_sticky"${(mode & 0o1000) ? ' checked' : ''}>粘滞</label>` +
     `</div>` +
     `<div class="mt-perm-preview" id="p_preview">${permText(mode)}</div>` +
-    `</div>`,
-    null, '');
-  const body = document.getElementById('fmModalBody');
-  body.innerHTML +=
+    `</div>` +
     `<div class="mt-foot">` +
     `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
     `<button class="mt-link" onclick="fmPermApply()">确定</button>` +
-    `</div>`;
+    `</div>`,
+    null, '');
   document.querySelectorAll('.mt-perm input[type=checkbox]').forEach(el => {
     el.addEventListener('change', () => {
       const preview = document.getElementById('p_preview');
@@ -3763,7 +3764,7 @@ function fmPermApply() {
   if (!paths.length) return;
   fmApi('/api/fs/chmod', {
     method: 'POST', headers: FM_JSON,
-    body: JSON.stringify({ paths, mode, recursive: true }),
+    body: JSON.stringify({ paths, mode, recursive: false }),
   }).then(() => {
     showToast('已修改权限');
     fmDialogClose();
@@ -3773,40 +3774,47 @@ function fmPermApply() {
 }
 
 // ---- MT 风格所有者 / 用户组选择：列表 + 搜索 ----
+/// 「所有者与用户组」：先选所有者，再选用户组，两次都只改对应的一半。
+function fmOwnerGroupBoth(recursive) {
+  const rec = !!recursive;
+  fmOwnerPicker(function (uid) {
+    fmApplyChown(uid, null, rec);
+    fmGroupPicker(function (gid) {
+      fmApplyChown(null, gid, rec);
+    });
+  });
+}
+
 function fmOwnerPicker(onPick) {
-  fmPickerPage('所有者', '/api/fs/users', (item) => {
-    const uid = item.id;
-    const cur = FM_PROPS ? FM_PROPS.gid : uid;
-    onPick(uid, cur);
+  const cur = (FM_PROPS && fmSelPaths()[0] === FM_PROPS_PATH) ? FM_PROPS.uid : -1;
+  fmPickerPage('所有者', '/api/fs/users', cur, (item) => {
+    onPick(item.id);
     fmDialogClose();
   }, 'u0_a333');
 }
 
 function fmGroupPicker(onPick) {
-  fmPickerPage('用户组', '/api/fs/groups', (item) => {
-    const gid = item.id;
-    const cur = FM_PROPS ? FM_PROPS.uid : gid;
-    onPick(cur, gid);
+  const cur = (FM_PROPS && fmSelPaths()[0] === FM_PROPS_PATH) ? FM_PROPS.gid : -1;
+  fmPickerPage('用户组', '/api/fs/groups', cur, (item) => {
+    onPick(item.id);
     fmDialogClose();
   }, 'media_rw');
 }
 
-function fmPickerPage(title, api, onPick, placeholder) {
+function fmPickerPage(title, api, current, onPick, placeholder) {
   fmDialog(title,
     `<div class="mt-picker">` +
     `<div class="mt-picker-search"><input type="text" id="mtPickerQ" placeholder="${fmHtml(placeholder)}" autocomplete="off"></div>` +
     `<div class="mt-picker-list" id="mtPickerList"><div class="mt-dim" style="padding:12px;">加载中…</div></div>` +
-    `</div>`,
-    null, '');
-  const body = document.getElementById('fmModalBody');
-  body.innerHTML +=
+    `</div>` +
     `<div class="mt-foot">` +
     `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
     `<button class="mt-link" onclick="fmPickerConfirm()">确定</button>` +
-    `</div>`;
+    `</div>`,
+    null, '');
 
   fmApi(api).then(list => {
-    FM_PICKER = { title, list: list || [], onPick, selected: -1 };
+    FM_PICKER = { title, list: list || [], onPick, selected: current };
     fmPickerRender('');
     const q = document.getElementById('mtPickerQ');
     if (q) q.addEventListener('input', () => fmPickerRender(q.value.trim()));
@@ -3860,9 +3868,12 @@ function fmPickerConfirm() {
 function fmApplyChown(uid, gid, recursive) {
   const paths = fmSelPaths();
   if (!paths.length) return;
+  const body = { paths, recursive };
+  if (uid !== null && uid !== undefined) body.uid = uid;
+  if (gid !== null && gid !== undefined) body.gid = gid;
   fmApi('/api/fs/chown', {
     method: 'POST', headers: FM_JSON,
-    body: JSON.stringify({ paths, uid, gid, recursive }),
+    body: JSON.stringify(body),
   }).then(() => {
     showToast('已修改所有者');
     fmLoad(0); fmLoad(1);
@@ -4275,8 +4286,14 @@ function fmOpenFile(entry, arc, kind) {
   fmEditorOpen(entry, null);
 }
 
+// 执行脚本一律用 `.`（在当前 shell 里 source）：
+//   · 直接 "${path}" 会按 shebang 起一个新进程，comm 就是脚本名 —— 位进程列表里一眼可见
+//   · `sh "${path}"` 会起一个 sh 子进程，comm=sh、cmdline 里还带着完整脚本路径
+// source 不产生新进程，进程列表里只有外层那个伪装过的 shell。
+// 命令替换后再 eval，避免路径里的空格/引号把整行拆坏。
 function fmRunCommand(path) {
-  return `if [ -x "${path}" ]; then "${path}"; else sh "${path}"; fi`;
+  const q = String(path).replace(/'/g, "'\\''");
+  return `. '${q}'`;
 }
 
 async function fmRunAs(entry) {
