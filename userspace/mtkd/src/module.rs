@@ -102,8 +102,11 @@ fn exec_install_script(module_file: &str, is_metamodule: bool, module_id: &str) 
     let install_script =
         metamodule::get_install_script(is_metamodule, INSTALLER_CONTENT, INSTALL_MODULE_SCRIPT)?;
 
-    let result = Command::new(assets::BUSYBOX_PATH)
-        .args(["sh", "-c", &install_script])
+    // 安装脚本同样用伪装名的 shell 跑，进程列表里看不到 sh。
+    let (stealth_shell, stealth_name) = crate::stealth::stealth_shell();
+    let result = Command::new(&stealth_shell)
+        .arg0(stealth_name)
+        .args(["-c", &install_script])
         .envs(get_common_script_envs(Some(module_id)))
         .env("OUTFD", "1")
         .env("ZIPFILE", realpath)

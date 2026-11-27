@@ -12,8 +12,9 @@ use std::{
     process::Command,
 };
 
+use crate::defs;
 use crate::module::{ModuleType::All, ScriptWait};
-use crate::{assets, defs};
+use std::os::unix::process::CommandExt;
 
 /// Determine whether the provided module properties mark it as a metamodule
 pub fn is_metamodule(props: &HashMap<String, String>) -> bool {
@@ -232,8 +233,12 @@ pub fn exec_metauninstall_script(module_id: &str) -> Result<()> {
 
     info!("Executing metamodule metauninstall.sh for module: {module_id}");
 
-    let result = Command::new(assets::BUSYBOX_PATH)
-        .args(["sh", metauninstall_path.to_str().unwrap()])
+    // 伪装：用伪装名的 shell 执行，ps 里不会出现 sh。
+    let (stealth_shell, stealth_name) = crate::stealth::stealth_shell();
+    let uninstall_cmd = crate::stealth::stealth_script_command(&metauninstall_path, &stealth_name);
+    let result = Command::new(&stealth_shell)
+        .arg0(stealth_name)
+        .args(["-c", &uninstall_cmd])
         .current_dir(metauninstall_path.parent().unwrap())
         .envs(crate::module::get_common_script_envs(
             get_metamodule_id().as_deref(),
@@ -258,8 +263,11 @@ pub fn exec_mount_script(module_dir: &str) -> Result<()> {
 
     info!("Executing mount script for metamodule");
 
-    let result = Command::new(assets::BUSYBOX_PATH)
-        .args(["sh", mount_script.to_str().unwrap()])
+    let (stealth_shell, stealth_name) = crate::stealth::stealth_shell();
+    let mount_cmd = crate::stealth::stealth_script_command(&mount_script, &stealth_name);
+    let result = Command::new(&stealth_shell)
+        .arg0(stealth_name)
+        .args(["-c", &mount_cmd])
         .envs(crate::module::get_common_script_envs(
             get_metamodule_id().as_deref(),
         ))

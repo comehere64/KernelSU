@@ -1898,6 +1898,7 @@ pub fn apps_snapshot() -> Vec<(u32, String)> {
     Vec::new()
 }
 
+#[cfg(target_os = "android")]
 fn apps_cached() -> std::sync::Arc<Vec<AppRow>> {
     let mut guard = APPS_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((built_at, rows)) = guard.as_ref()

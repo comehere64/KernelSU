@@ -3610,7 +3610,9 @@ function fmAttr() {
 
 function dirOf(path) {
   const i = path.lastIndexOf('/');
-  return i <= 0 ? '/' : path.slice(0, i);
+  if (i <= 0) return '/';
+  // MT 的属性页"目录"是带尾斜杠的父目录
+  return path.slice(0, i + 1);
 }
 
 function fmMoreMenu() {
