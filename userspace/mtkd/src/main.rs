@@ -67,6 +67,7 @@ mod webui;
 mod webui_apps;
 mod webui_files;
 mod webui_keymint;
+mod webui_props;
 mod webui_shell;
 mod webui_spawn;
 

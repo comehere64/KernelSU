@@ -220,6 +220,59 @@ fn parse_manifest_label(data: &[u8]) -> Option<LabelResult> {
     })
 }
 
+/// Manifest 里属性对话框要用到的那些字段。
+///
+/// 一次遍历全部取出来，比分别调 extract_package / extract_label 再解一遍 manifest 省事。
+#[derive(Clone, Default)]
+pub struct ManifestFacts {
+    pub package: Option<String>,
+    pub version_name: Option<String>,
+    pub version_code: Option<u32>,
+    pub min_sdk: Option<u32>,
+    pub target_sdk: Option<u32>,
+    pub label: Option<String>,
+}
+
+fn attr_string(pool: &StringPool, raw: u32, dtype: u8, data: u32) -> Option<String> {
+    if dtype == 0x03 {
+        return pool.get(data).map(str::to_string);
+    }
+    if raw != u32::MAX {
+        return pool.get(raw).map(str::to_string);
+    }
+    None
+}
+
+fn attr_u32(dtype: u8, data: u32) -> Option<u32> {
+    // 0x10 = INT_DEC / 0x11 = INT_HEX / 0x12 = INT_BOOLEAN
+    matches!(dtype, 0x10 | 0x11 | 0x12).then_some(data)
+}
+
+/// 从 AndroidManifest.xml 里抽取属性对话框要显示的字段。
+pub fn extract_manifest_facts<R: Read + Seek>(zip_file: R) -> Option<ManifestFacts> {
+    let mut archive = zip::ZipArchive::new(zip_file).ok()?;
+    let data = read_manifest(&mut archive)?;
+
+    let mut facts = ManifestFacts::default();
+    find_attribute::<()>(&data, |pool, elem, attr, a_raw, a_dtype, a_data| {
+        // 一直返回 None：让 find_attribute 把所有元素的所有属性都走一遍。
+        match (elem, attr) {
+            ("manifest", "package") => facts.package = attr_string(pool, a_raw, a_dtype, a_data),
+            ("manifest", "versionName") => {
+                facts.version_name = attr_string(pool, a_raw, a_dtype, a_data);
+            }
+            ("manifest", "versionCode") => facts.version_code = attr_u32(a_dtype, a_data),
+            ("uses-sdk", "minSdkVersion") => facts.min_sdk = attr_u32(a_dtype, a_data),
+            ("uses-sdk", "targetSdkVersion") => facts.target_sdk = attr_u32(a_dtype, a_data),
+            ("application", "label") => facts.label = attr_string(pool, a_raw, a_dtype, a_data),
+            _ => {}
+        }
+        None
+    });
+
+    Some(facts)
+}
+
 /// The `package` attribute of `<manifest>`, which is always a plain string.
 fn parse_manifest_package(data: &[u8]) -> Option<String> {
     find_attribute(data, |pool, elem, attr, _a_raw, a_dtype, a_data| {

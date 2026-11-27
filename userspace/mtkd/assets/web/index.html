@@ -494,6 +494,20 @@ body.modal-open { overflow: hidden; }
     .fm-field input[type=text] { flex: 1 1 auto; min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; }
     .fm-presets { display: flex; gap: 6px; margin: 0 0 10px 76px; flex-wrap: wrap; }
     .fm-props { font-size: 12px; color: var(--text-secondary); line-height: 1.7; word-break: break-all; }
+    .fm-kv-wrap { display: flex; flex-direction: column; gap: 1px; }
+    .fm-kv { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; border-bottom: 1px solid var(--border); }
+    .fm-kv:last-child { border-bottom: 0; }
+    .fm-kv-k { flex: 0 0 auto; min-width: 92px; max-width: 40%; color: var(--text-tertiary); font-size: 12px; }
+    .fm-kv-v { flex: 1 1 auto; min-width: 0; color: var(--text-primary); font-size: 12px; word-break: break-all; }
+    .fm-kv-sec { margin: 12px 0 4px; font-size: 11px; font-weight: 600; color: var(--text-secondary); letter-spacing: .04em; }
+    .fm-kv-sec:first-child { margin-top: 0; }
+    .fm-mono { font-family: ui-monospace, Menlo, Consolas, monospace; }
+    .fm-dim { color: var(--text-tertiary); font-size: 11px; }
+    .fm-chk { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-secondary); }
+    .fm-hash { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+    .fm-hash-out { margin-top: 8px; font-size: 12px; word-break: break-all; color: var(--text-primary); }
+    .fm-share-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+    .fm-share-list .fm-btn { width: 100%; }
     @media (max-width: 480px) {
       .fm-panes { gap: 8px; }
       .fm-row { padding: 10px 9px; gap: 7px; }
@@ -729,7 +743,8 @@ body.modal-open { overflow: hidden; }
         <button class="fm-btn" id="fmArcExitBtn" onclick="fmArcExit(FM.owner)">退出压缩包</button>
         <button class="fm-btn" id="fmRootBtn" onclick="fmAddToRoots()">加入快速跳转</button>
         <button class="fm-btn primary" id="fmQuickAddBtn" onclick="fmAddToQuick()">加入便捷执行</button>
-        <button class="fm-btn fs-only" onclick="fmAttr()">属性 / 权限</button>
+        <button class="fm-btn fs-only" onclick="fmAttr()">属性</button>
+        <button class="fm-btn" onclick="fmShare()">分享</button>
         <button class="fm-btn fs-only" onclick="fmRename()">重命名</button>
         <button class="fm-btn danger" onclick="fmDelete()">删除</button>
         <button class="fm-btn" onclick="fmSelectAll()">全选</button>
@@ -3432,55 +3447,277 @@ function fmNewFile() {
     });
 }
 
+function fmKv(label, value, opts) {
+  const o = opts || {};
+  return `<div class="fm-kv"><div class="fm-kv-k">${label}</div>` +
+    `<div class="fm-kv-v${o.mono ? ' fm-mono' : ''}">${value}</div></div>`;
+}
+
+function fmSection(title) {
+  return `<div class="fm-kv-sec">${title}</div>`;
+}
+
+function fmPropsTable(p) {
+  const bits = [];
+  bits.push(fmSection('基本信息'));
+  bits.push(fmKv('名称', fmHtml(p.name)));
+  bits.push(fmKv('路径', fmHtml(p.path)));
+  bits.push(fmKv('类型', fmHtml(p.kind) + (p.mime ? ` <span class="fm-dim">（${fmHtml(p.mime)}）</span>` : '')));
+  bits.push(fmKv('大小', `${fmHtml(p.size_text)} <span class="fm-dim">(${p.size} 字节)</span>`));
+  if (!p.is_dir) bits.push(fmKv('占用', fmHtml(p.disk_usage_text)));
+  if (p.is_symlink) bits.push(fmKv('链接目标', fmHtml(p.symlink_target || '—')));
+
+  bits.push(fmSection('时间'));
+  bits.push(fmKv('修改时间', fmTime(p.mtime) || '—'));
+  bits.push(fmKv('访问时间', fmTime(p.atime) || '—'));
+  bits.push(fmKv('状态变更', fmTime(p.ctime) || '—'));
+
+  bits.push(fmSection('权限与属主'));
+  bits.push(fmKv('权限', `<span class="fm-mono">${fmHtml(p.mode_text)}</span> <span class="fm-dim">(${(p.mode || 0).toString(8)})</span>`));
+  const special = [p.suid ? 'suid' : '', p.sgid ? 'sgid' : '', p.sticky ? 'sticky' : ''].filter(Boolean).join(' / ');
+  if (special) bits.push(fmKv('特殊位', fmHtml(special)));
+  bits.push(fmKv('所有者', `${fmHtml(p.user_name)} <span class="fm-dim">(${p.uid})</span>`));
+  bits.push(fmKv('用户组', `${fmHtml(p.group_name)} <span class="fm-dim">(${p.gid})</span>`));
+
+  bits.push(fmSection('文件信息'));
+  bits.push(fmKv('inode', String(p.inode)));
+  bits.push(fmKv('硬链接数', String(p.nlink)));
+  if (p.selinux) bits.push(fmKv('SELinux', `<span class="fm-mono">${fmHtml(p.selinux)}</span>`));
+
+  if (p.apk) {
+    const a = p.apk;
+    bits.push(fmSection('APK 信息'));
+    bits.push(fmKv('包名', `<span class="fm-mono">${fmHtml(a.package || '—')}</span>`));
+    if (a.label) bits.push(fmKv('应用名', fmHtml(a.label)));
+    bits.push(fmKv('版本名', fmHtml(a.version_name || '—')));
+    bits.push(fmKv('版本号', String(a.version_code || '—')));
+    bits.push(fmKv('minSdk / targetSdk', `${a.min_sdk || '—'} / ${a.target_sdk || '—'}`));
+    bits.push(fmKv('签名方案', fmHtml(a.schemes || '未签名')));
+    if (a.cert_md5) bits.push(fmKv('证书 MD5', `<span class="fm-mono">${fmHtml(a.cert_md5)}</span>`));
+    if (a.cert_sha1) bits.push(fmKv('证书 SHA-1', `<span class="fm-mono">${fmHtml(a.cert_sha1)}</span>`));
+    if (a.cert_sha256) bits.push(fmKv('证书 SHA-256', `<span class="fm-mono">${fmHtml(a.cert_sha256)}</span>`));
+  }
+
+  if (p.image) {
+    bits.push(fmSection('图片'));
+    bits.push(fmKv('格式', fmHtml(p.image.format || '—')));
+    bits.push(fmKv('分辨率', `${p.image.width} × ${p.image.height}`));
+  }
+
+  if (!p.is_dir) {
+    bits.push(fmSection('校验值'));
+    bits.push(`<div class="fm-hash" id="fmHashBox">` +
+      ['md5', 'sha1', 'sha256'].map(a =>
+        `<button class="fm-btn" onclick="fmHash('${a}')">计算 ${a.toUpperCase()}</button>`).join('') +
+      `</div><div class="fm-hash-out" id="fmHashOut"></div>`);
+  }
+
+  return `<div class="fm-kv-wrap">${bits.join('')}</div>`;
+}
+
+let FM_PROPS_PATH = '';
+
 function fmAttr() {
   const paths = fmSelPaths();
   if (!paths.length || !fmFsOnly()) return;
   const single = paths.length === 1;
-  fmApi('/api/fs/stat?path=' + fmEsc(paths[0])).then(e => {
-    const info = single
-      ? `<div class="fm-props">路径：${fmHtml(e.path)}<br>类型：${e.is_dir ? '目录' : '文件'}${e.is_symlink ? '（软链接 → ' + fmHtml(e.symlink_target || '') + '）' : ''}` +
-        `<br>大小：${e.size} 字节<br>权限：${e.mode_text}（${(e.mode || 0).toString(8)}）` +
-        `<br>修改时间：${fmTime(e.mtime) || '—'}</div>`
-      : `<div class="fm-props">已选 ${paths.length} 项，将批量修改</div>`;
+  if (!single) {
+    // 多选：只做批量改权限
+    fmDialog('批量属性',
+      `<div class="fm-props">已选 ${paths.length} 项，将批量修改权限 / 属主</div>` +
+      fmModeEditor('777', false),
+      async () => fmApplyAttr(paths, false));
+    return;
+  }
 
-    fmDialog('属性 / 权限',
-      info +
-      `<div class="fm-field" style="margin-top:12px;"><label>权限</label>` +
-      `<input type="text" id="fmMode" value="${single ? (e.mode || 0).toString(8) : '777'}" placeholder="777"></div>` +
-      `<div class="fm-presets">` +
-      ['777', '755', '644', '600', '700', '000'].map(m =>
-        `<button class="fm-btn" onclick="document.getElementById('fmMode').value='${m}'">${m}</button>`).join('') +
-      `</div>` +
-      `<div class="fm-field"><label>所有者</label>` +
-      `<input type="text" id="fmOwner" placeholder="留空不改，例如 1017:1017"></div>` +
-      `<div class="fm-field"><label>递归</label><input type="checkbox" id="fmAttrRecursive">` +
-      `<span style="font-size:12px;color:var(--text-secondary);">对目录内所有内容生效</span></div>` +
+  FM_PROPS_PATH = paths[0];
+  fmApi('/api/fs/props?path=' + fmEsc(paths[0])).then(p => {
+    fmDialog('属性',
+      fmPropsTable(p) +
+      `<div class="fm-kv-sec" style="margin-top:14px;">修改权限 / 属主</div>` +
+      fmModeEditor((p.mode || 0).toString(8), !!p.is_dir) +
       fmFooter('应用'),
-      async () => {
-        const recursive = document.getElementById('fmAttrRecursive').checked;
-        const mode = document.getElementById('fmMode').value.trim();
-        const owner = document.getElementById('fmOwner').value.trim();
-        const ids = owner.match(/^(\d+)\s*[:：]\s*(\d+)$/);
-        if (owner && !ids) {
-          showToast('所有者要写成 uid:gid，例如 1017:1017');
-          return;
-        }
-        if (mode) {
-          await fmApi('/api/fs/chmod', {
-            method: 'POST', headers: FM_JSON, body: JSON.stringify({ paths, mode, recursive }),
-          });
-        }
-        if (ids) {
-          await fmApi('/api/fs/chown', {
-            method: 'POST', headers: FM_JSON,
-            body: JSON.stringify({ paths, uid: Number(ids[1]), gid: Number(ids[2]), recursive }),
-          });
-        }
-        showToast('已应用'); fmClearSel(); fmLoad(0); fmLoad(1);
-      });
+      async () => fmApplyAttr(paths, true));
   }).catch(e => showToast('读取属性失败：' + e.message));
 }
 
+function fmModeEditor(modeOctal, isDir) {
+  const rwx = (bit, label) =>
+    `<label class="fm-chk"><input type="checkbox" data-bit="${bit}"${((parseInt(modeOctal, 8) & bit) ? ' checked' : '')}>${label}</label>`;
+  return `<div class="fm-props" style="margin-top:6px;">权限（八进制，如 644 / 755）</div>` +
+    `<div class="fm-field"><input type="text" id="fmMode" value="${modeOctal}" placeholder="755"></div>` +
+    `<div class="fm-presets">` +
+    ['777', '755', '644', '600', '700', '000'].map(m =>
+      `<button class="fm-btn" onclick="document.getElementById('fmMode').value='${m}'">${m}</button>`).join('') +
+    `</div>` +
+    `<div class="fm-presets" style="flex-wrap:wrap;">` +
+    rwx(0o400, 'r') + rwx(0o200, 'w') + rwx(0o100, 'x') + '|' +
+    rwx(0o040, 'r') + rwx(0o020, 'w') + rwx(0o010, 'x') + '|' +
+    rwx(0o004, 'r') + rwx(0o002, 'w') + rwx(0o001, 'x') +
+    `</div>` +
+    `<div class="fm-presets" style="flex-wrap:wrap;">` +
+    `<label class="fm-chk"><input type="checkbox" id="fmSuid">suid</label>` +
+    `<label class="fm-chk"><input type="checkbox" id="fmSgid">sgid</label>` +
+    `<label class="fm-chk"><input type="checkbox" id="fmSticky">sticky</label>` +
+    `</div>` +
+    `<div class="fm-field"><label>所有者</label>` +
+    `<input type="text" id="fmOwner" placeholder="留空不改，例如 1017:1017 或 u0_a379:u0_a379"></div>` +
+    `<div class="fm-field"><label>递归</label><input type="checkbox" id="fmAttrRecursive">` +
+    `<span class="fm-dim">目录内所有内容一并处理</span></div>`;
+}
+
+async function fmApplyAttr(paths, single) {
+  const recursive = document.getElementById('fmAttrRecursive').checked;
+  let mode = document.getElementById('fmMode').value.trim();
+  const owner = document.getElementById('fmOwner').value.trim();
+
+  // 勾选框优先：有任何勾选就以 rwx 复选为准
+  const boxes = Array.from(document.querySelectorAll('.fm-chk input[data-bit]'));
+  if (boxes.some(b => b.checked)) {
+    let v = 0;
+    boxes.forEach(b => { if (b.checked) v |= Number(b.dataset.bit); });
+    if (document.getElementById('fmSuid').checked) v |= 0o4000;
+    if (document.getElementById('fmSgid').checked) v |= 0o2000;
+    if (document.getElementById('fmSticky').checked) v |= 0o1000;
+    mode = v.toString(8);
+  }
+
+  let ids = null;
+  if (owner) {
+    ids = owner.match(/^(\d+)\s*[:：]\s*(\d+)$/);
+    if (!ids) {
+      // 允许 u0_a379:u0_a379 这种名字形式 → 由后端 resolve
+      ids = null;
+    }
+    if (!ids && !/^[^:：\s]+\s*[:：]\s*[^:：\s]+$/.test(owner)) {
+      throw new Error('所有者要写成 uid:gid 或 用户名:组名');
+    }
+  }
+
+  if (mode) {
+    await fmApi('/api/fs/chmod', {
+      method: 'POST', headers: FM_JSON,
+      body: JSON.stringify({ paths, mode, recursive }),
+    });
+  }
+  if (owner) {
+    if (ids) {
+      await fmApi('/api/fs/chown', {
+        method: 'POST', headers: FM_JSON,
+        body: JSON.stringify({ paths, uid: Number(ids[1]), gid: Number(ids[2]), recursive }),
+      });
+    } else {
+      await fmApi('/api/fs/chown', {
+        method: 'POST', headers: FM_JSON,
+        body: JSON.stringify({ paths, owner, recursive }),
+      });
+    }
+  }
+  showToast('已应用');
+  if (single) {
+    fmDialogClose();
+    fmApi('/api/fs/props?path=' + fmEsc(FM_PROPS_PATH)).then(p => {
+      fmDialog('属性', fmPropsTable(p) + fmModeEditor((p.mode || 0).toString(8), !!p.is_dir) + fmFooter('应用'),
+        async () => fmApplyAttr([FM_PROPS_PATH], true));
+    }).catch(() => {});
+  }
+  fmLoad(0); fmLoad(1);
+}
+
+function fmHash(algo) {
+  const out = document.getElementById('fmHashOut');
+  if (!FM_PROPS_PATH) return;
+  out.textContent = `正在计算 ${algo.toUpperCase()}…`;
+  fmApi('/api/fs/hash?algo=' + algo + '&path=' + fmEsc(FM_PROPS_PATH))
+    .then(r => {
+      out.innerHTML = `<div class="fm-kv"><div class="fm-kv-k">${algo.toUpperCase()}</div>` +
+        `<div class="fm-kv-v fm-mono">${fmHtml(r.digest)}</div></div>`;
+    })
+    .catch(e => { out.textContent = '计算失败：' + e.message; });
+}
+
+function fmShare() {
+  const paths = fmSelPaths();
+  if (!paths.length) return;
+  const single = paths.length === 1;
+  const name = single ? paths[0].split('/').filter(Boolean).pop() : `${paths.length} 个文件`;
+  fmDialog('分享',
+    `<div class="fm-props">已选 ${paths.length} 项：${fmHtml(name)}</div>` +
+    `<div class="fm-share-list">` +
+    `<button class="fm-btn primary" onclick="fmShareDownload()">下载</button>` +
+    `<button class="fm-btn" onclick="fmShareCopyPath()">复制路径</button>` +
+    `<button class="fm-btn" onclick="fmShareCopyName()">复制名称</button>` +
+    `<button class="fm-btn" onclick="fmShareZip()">打包成 zip</button>` +
+    `</div>` +
+    `<div class="fm-props" style="margin-top:10px;">` +
+    (single ? '单个文件直接下载原始内容；目录或多个文件会先打包再下载。' : '') +
+    `</div>` +
+    `<div class="fm-hash-out" id="fmShareOut"></div>`,
+    null, '关闭');
+}
+
+function fmShareName() {
+  const paths = fmSelPaths();
+  return paths.length === 1
+    ? paths[0].split('/').filter(Boolean).pop()
+    : 'share';
+}
+
+function fmShareDownload() {
+  const paths = fmSelPaths();
+  if (!paths.length) return;
+  if (paths.length === 1) {
+    const st = document.getElementById('fmShareOut');
+    st.innerHTML = `<a class="fm-btn primary" href="/api/fs/raw?path=${fmEsc(paths[0])}" download>点击开始下载</a>`;
+    return;
+  }
+  fmShareZip();
+}
+
+function fmShareCopyPath() {
+  const paths = fmSelPaths();
+  const text = paths.join('\n');
+  fmCopy(text, '已复制路径');
+}
+
+function fmShareCopyName() {
+  fmCopy(fmShareName(), '已复制名称');
+}
+
+function fmCopy(text, okMsg) {
+  const done = () => showToast(okMsg || '已复制');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => fmCopyFallback(text, done));
+  } else {
+    fmCopyFallback(text, done);
+  }
+}
+
+function fmCopyFallback(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); done(); } catch (e) { showToast('复制失败'); }
+  document.body.removeChild(ta);
+}
+
+function fmShareZip() {
+  const paths = fmSelPaths();
+  const out = document.getElementById('fmShareOut');
+  if (!paths.length) return;
+  out.textContent = '正在打包…';
+  fmApi('/api/fs/share', {
+    method: 'POST', headers: FM_JSON,
+    body: JSON.stringify({ paths, name: fmShareName() }),
+  }).then(r => {
+    out.innerHTML = `<div class="fm-props">已打包：${fmHtml(r.name)}（${fmHtml(r.size_text)}）` +
+      `<br>位置：${fmHtml(r.path)}</div>` +
+      `<a class="fm-btn primary" style="margin-top:8px;" href="/api/fs/raw?path=${fmEsc(r.path)}" download="${fmHtml(r.name)}">下载 zip</a>`;
+  }).catch(e => { out.textContent = '打包失败：' + e.message; });
+}
 function fmAllRoots() {
   return (FM.builtinRoots || []).map(r => ({ name: r.label, path: r.path, builtin: true }))
     .concat((FM.customRoots || []).map(r => ({ name: r.name, path: r.path, builtin: false })));

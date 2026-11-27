@@ -2180,6 +2180,45 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             Err(e) => error_response(stream, 400, &format!("{e:#}")),
         },
 
+        ("POST", "/api/fs/share") => rooted(stream, req, |body: ShareRequest| {
+            let name = if body.name.trim().is_empty() {
+                "share".to_string()
+            } else {
+                body.name.trim().to_string()
+            };
+            let share_dir = format!("{}share/", defs::WORKING_DIR);
+            let (path, file_name, size) =
+                crate::webui_props::zip_paths(&body.paths, &name, &share_dir)?;
+            Ok(serde_json::json!({
+                "path": path,
+                "name": file_name,
+                "size": size,
+                "size_text": crate::webui_props::human_size(size),
+            }))
+        }),
+
+        ("GET", "/api/fs/props") => match require_param(req, "path") {
+            Ok(path) => {
+                let mime = mime_for_name(&path).to_string();
+                match crate::webui_props::props(&path, &mime) {
+                    Ok(props) => json_response(stream, &ApiResponse::ok(props)),
+                    Err(e) => error_response(stream, 500, &format!("{e:#}")),
+                }
+            }
+            Err(e) => error_response(stream, 400, &format!("{e:#}")),
+        },
+
+        ("GET", "/api/fs/hash") => match (require_param(req, "path"), require_param(req, "algo")) {
+            (Ok(path), Ok(algo)) => match crate::webui_props::hash_file(&path, &algo) {
+                Ok(digest) => json_response(
+                    stream,
+                    &ApiResponse::ok(serde_json::json!({ "algo": algo, "digest": digest })),
+                ),
+                Err(e) => error_response(stream, 500, &format!("{e:#}")),
+            },
+            (Err(e), _) | (_, Err(e)) => error_response(stream, 400, &format!("{e:#}")),
+        },
+
         ("GET", "/api/fs/stat") => match require_param(req, "path") {
             Ok(path) => fs_json(stream, crate::webui_files::stat(&path)),
             Err(e) => error_response(stream, 400, &format!("{e:#}")),
@@ -2248,7 +2287,14 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
         }),
 
         ("POST", "/api/fs/chown") => rooted_ok(stream, req, |body: FsOwner| {
-            crate::webui_files::chown(&body.paths, body.uid, body.gid, body.recursive)
+            // 两种写法都收：{uid,gid} 或 {owner:"user:group"}
+            let (uid, gid) = if body.owner.trim().is_empty() {
+                let uid = body.uid.context("缺少 uid")?;
+                (uid, body.gid.unwrap_or(uid))
+            } else {
+                crate::webui_files::resolve_owner(body.owner.trim())?
+            };
+            crate::webui_files::chown(&body.paths, uid, gid, body.recursive)
         }),
 
         ("POST", "/api/fs/write") => rooted_ok(stream, req, |body: FsWrite| {
@@ -3643,8 +3689,13 @@ struct FsMode {
 #[derive(serde::Deserialize)]
 struct FsOwner {
     paths: Vec<String>,
-    uid: u32,
-    gid: u32,
+    #[serde(default)]
+    uid: Option<u32>,
+    #[serde(default)]
+    gid: Option<u32>,
+    /// 允许直接给 "user:group"（名字形式），由后端解析成 uid/gid
+    #[serde(default)]
+    owner: String,
     #[serde(default)]
     recursive: bool,
 }
@@ -3730,6 +3781,13 @@ struct KeymintKeyboxContent {
 #[derive(serde::Deserialize)]
 struct KeymintRestart {
     what: String,
+}
+
+#[derive(serde::Deserialize)]
+struct ShareRequest {
+    paths: Vec<String>,
+    #[serde(default)]
+    name: String,
 }
 
 #[derive(serde::Deserialize)]

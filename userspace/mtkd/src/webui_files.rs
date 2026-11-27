@@ -496,6 +496,71 @@ pub fn chmod(_paths: &[String], _mode: u32, _recursive: bool) -> Result<()> {
 }
 
 #[cfg(unix)]
+/// 把 "user:group" 解析成 (uid, gid)。
+///
+/// 属性对话框里允许写 `u0_a379:u0_a379` 这种名字（对照 `ls -l` 的输出），
+/// 纯数字也照收，方便脚本直接调。
+#[cfg(unix)]
+pub fn resolve_owner(spec: &str) -> Result<(u32, u32)> {
+    use std::os::raw::c_char;
+
+    let (user, group) = spec
+        .split_once(':')
+        .or_else(|| spec.split_once('：'))
+        .ok_or_else(|| anyhow::anyhow!("要写成 user:group"))?;
+    let user = user.trim();
+    let group = group.trim();
+
+    fn name_to_uid(name: &str) -> Option<u32> {
+        if let Ok(v) = name.parse::<u32>() {
+            return Some(v);
+        }
+        let cname = std::ffi::CString::new(name).ok()?;
+        unsafe {
+            let mut buf = [0 as c_char; 1024];
+            let mut pwd: libc::passwd = std::mem::zeroed();
+            let mut out: *mut libc::passwd = std::ptr::null_mut();
+            let rc = libc::getpwnam_r(
+                cname.as_ptr(),
+                &mut pwd,
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut out,
+            );
+            (rc == 0 && !out.is_null()).then_some(pwd.pw_uid)
+        }
+    }
+
+    fn name_to_gid(name: &str) -> Option<u32> {
+        if let Ok(v) = name.parse::<u32>() {
+            return Some(v);
+        }
+        let cname = std::ffi::CString::new(name).ok()?;
+        unsafe {
+            let mut buf = [0 as c_char; 1024];
+            let mut grp: libc::group = std::mem::zeroed();
+            let mut out: *mut libc::group = std::ptr::null_mut();
+            let rc = libc::getgrnam_r(
+                cname.as_ptr(),
+                &mut grp,
+                buf.as_mut_ptr(),
+                buf.len(),
+                &mut out,
+            );
+            (rc == 0 && !out.is_null()).then_some(grp.gr_gid)
+        }
+    }
+
+    let uid = name_to_uid(user).ok_or_else(|| anyhow::anyhow!("找不到用户 {user}"))?;
+    let gid = name_to_gid(group).ok_or_else(|| anyhow::anyhow!("找不到用户组 {group}"))?;
+    Ok((uid, gid))
+}
+
+#[cfg(not(unix))]
+pub fn resolve_owner(_spec: &str) -> Result<(u32, u32)> {
+    bail!("当前平台不支持解析属主")
+}
+
 pub fn chown(paths: &[String], uid: u32, gid: u32, recursive: bool) -> Result<()> {
     for path in paths {
         for_each_in_tree(Path::new(path), recursive, &mut |target| {
