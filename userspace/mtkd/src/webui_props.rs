@@ -152,7 +152,10 @@ fn group_name(gid: u32) -> String {
 }
 
 /// 读 security.selinux 扩展属性。读不到就返回空串（非 SELinux 环境）。
-#[cfg(unix)]
+///
+/// 只给 Linux/Android 编：macOS 的 getxattr 是 6 个参数（多 position/options），
+/// 而且那边本来也没有 SELinux 上下文可读。
+#[cfg(any(target_os = "android", target_os = "linux"))]
 fn selinux_context(path: &std::path::Path) -> String {
     use std::os::unix::ffi::OsStrExt;
     let Ok(cpath) = std::ffi::CString::new(path.as_os_str().as_bytes()) else {
@@ -177,7 +180,7 @@ fn selinux_context(path: &std::path::Path) -> String {
     String::from_utf8_lossy(&raw[..end]).into_owned()
 }
 
-#[cfg(not(unix))]
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
 fn selinux_context(_path: &std::path::Path) -> String {
     String::new()
 }
