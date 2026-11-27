@@ -236,8 +236,13 @@ fn send_response_with(
         _ => "OK",
     };
 
+    // 面板本身是 root 权限在跑：任何页面都不该能把它 iframe 进去做点击劫持，
+    // 也不该把带令牌的地址通过 Referer 泄给第三方。
+    let baseline = "X-Frame-Options: DENY\r\n\
+                    X-Content-Type-Options: nosniff\r\n\
+                    Referrer-Policy: no-referrer\r\n";
     let response = format!(
-        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n{extra_headers}\r\n",
+        "HTTP/1.1 {} {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n{baseline}{extra_headers}\r\n",
         status,
         status_text,
         content_type,
@@ -1247,7 +1252,7 @@ fn apk_icon(_path: &str) -> anyhow::Result<Vec<u8>> {
 #[cfg(target_os = "android")]
 fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
     {
-        let mut cache_guard = APP_ICON_CACHE.lock().unwrap();
+        let mut cache_guard = APP_ICON_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if cache_guard.is_none() {
             *cache_guard = Some(std::collections::HashMap::new());
         }
@@ -1330,7 +1335,7 @@ fn get_app_icon_base64(pkg_name: &str) -> Option<(String, String)> {
     let result = (b64, "image/png".to_string());
 
     {
-        let mut cache_guard = APP_ICON_CACHE.lock().unwrap();
+        let mut cache_guard = APP_ICON_CACHE.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(cache) = cache_guard.as_mut() {
             cache.insert(pkg_name.to_string(), result.clone());
         }

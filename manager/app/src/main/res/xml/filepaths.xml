@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 
+<!--
+  只暴露真正需要共享出去的位置：
+    cache/shared/ —— 日志包（KernelSU_bugreport_*.tar.gz）等临时产物
+    Download/     —— 用户导出的文件
+
+  原来写的是 <cache-path path="."/>，等于把应用私有缓存整棵树交给任何拿到一个
+  授权 URI 的第三方（缓存里含模块 zip、图标、各种中间文件）。收窄到 shared/
+  之后功能不变，暴露面小很多。
+-->
 <paths>
-    <cache-path name="cache" path="."/>
+    <cache-path name="cache_shared" path="shared/"/>
     <external-path name="downloads" path="Download"/>
 </paths>

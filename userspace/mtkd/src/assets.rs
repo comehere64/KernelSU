@@ -7,6 +7,7 @@ mod android {
     use crate::defs::BINARY_DIR;
     use crate::utils::ensure_binary;
     use const_format::concatcp;
+    use std::path::Path;
 
     pub const RESETPROP_PATH: &str = concatcp!(BINARY_DIR, "resetprop");
     pub const BUSYBOX_PATH: &str = concatcp!(BINARY_DIR, "busybox");
@@ -18,9 +19,16 @@ mod android {
                 // don't extract internal executables and kernel modules
                 continue;
             }
+            let path = format!("{BINARY_DIR}{file}");
+            // Asset::get() 每次调用都会把内嵌文件解压出来（rust-embed 的 compression），
+            // 而这段在 post-fs-data 里每次开机都跑、还排在所有模块脚本前面。
+            // 目标文件已经在了就直接跳过，别再白白解一遍。
+            if ignore_if_exist && Path::new(&path).exists() {
+                continue;
+            }
             let asset =
                 Asset::get(&file).ok_or_else(|| anyhow::anyhow!("asset not found: {file}"))?;
-            ensure_binary(format!("{BINARY_DIR}{file}"), &asset.data, ignore_if_exist)?;
+            ensure_binary(path, &asset.data, ignore_if_exist)?;
         }
 
         // Create resetprop -> ksud symlink (resetprop is now built into ksud)

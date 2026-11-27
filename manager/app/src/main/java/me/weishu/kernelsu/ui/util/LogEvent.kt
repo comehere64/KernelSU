@@ -107,7 +107,10 @@ fun getBugreportFile(context: Context): File {
     val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH_mm")
     val current = LocalDateTime.now().format(formatter)
 
-    val targetFile = File(context.cacheDir, "KernelSU_bugreport_${current}.tar.gz")
+    // 放到 cache/shared/ 下：FileProvider 只开这一个子目录，
+    // 不必把整个 cache 目录都暴露给拿到授权 URI 的第三方。
+    val sharedDir = File(context.cacheDir, "shared").apply { mkdirs() }
+    val targetFile = File(sharedDir, "KernelSU_bugreport_${current}.tar.gz")
 
     shell.newJob().add("tar czf ${targetFile.absolutePath} -C ${bugreportDir.absolutePath} .").exec()
     shell.newJob().add("rm -rf ${bugreportDir.absolutePath}").exec()
