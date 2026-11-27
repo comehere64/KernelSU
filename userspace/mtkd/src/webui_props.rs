@@ -7,6 +7,10 @@
 //!     另外 MD5 / SHA1 / SHA256 按需计算。
 //!   · 分享：下载链接、复制路径、系统分享（am start SEND）、打包成 zip。
 
+// 属性/分享只在 Android 上有意义；桌面目标仍会编译这个模块（webui 那一串都是
+// 无条件编译的），那里的辅助函数自然没人调用，别让 dead_code 刷屏。
+#![cfg_attr(not(target_os = "android"), allow(dead_code))]
+
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
 

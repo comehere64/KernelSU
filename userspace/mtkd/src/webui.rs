@@ -2180,22 +2180,31 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             Err(e) => error_response(stream, 400, &format!("{e:#}")),
         },
 
-        ("POST", "/api/fs/share") => rooted(stream, req, |body: ShareRequest| {
-            let name = if body.name.trim().is_empty() {
-                "share".to_string()
-            } else {
-                body.name.trim().to_string()
-            };
-            let share_dir = format!("{}share/", defs::WORKING_DIR);
-            let (path, file_name, size) =
-                crate::webui_props::zip_paths(&body.paths, &name, &share_dir)?;
-            Ok(serde_json::json!({
-                "path": path,
-                "name": file_name,
-                "size": size,
-                "size_text": crate::webui_props::human_size(size),
-            }))
-        }),
+        ("POST", "/api/fs/share") => {
+            #[cfg(target_os = "android")]
+            {
+                rooted(stream, req, |body: ShareRequest| {
+                    let name = if body.name.trim().is_empty() {
+                        "share".to_string()
+                    } else {
+                        body.name.trim().to_string()
+                    };
+                    let share_dir = format!("{}share/", defs::WORKING_DIR);
+                    let (path, file_name, size) =
+                        crate::webui_props::zip_paths(&body.paths, &name, &share_dir)?;
+                    Ok(serde_json::json!({
+                        "path": path,
+                        "name": file_name,
+                        "size": size,
+                        "size_text": crate::webui_props::human_size(size),
+                    }))
+                })
+            }
+            #[cfg(not(target_os = "android"))]
+            {
+                error_response(stream, 500, "Not supported on this platform")
+            }
+        }
 
         ("GET", "/api/fs/props") => match require_param(req, "path") {
             Ok(path) => {
