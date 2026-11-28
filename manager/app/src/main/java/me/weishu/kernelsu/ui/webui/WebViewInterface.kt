@@ -4,6 +4,8 @@ import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -171,6 +173,39 @@ class WebViewInterface(private val state: WebUIState) {
             }
         }.whenComplete { _, _ ->
             runCatching { shell.close() }
+        }
+    }
+
+    // 网页端的复制/粘贴必须走这里。
+    //
+    // WebView 里 navigator.clipboard 是拿不到剪贴板的（非安全上下文 + 没有权限），
+    // 而 document.execCommand('copy') 在部分 WebView 版本里也不生效。
+    // 所以直接把 setPrimaryClip/getPrimaryClip 暴露给页面。
+    @JavascriptInterface
+    fun copy(text: String): Boolean {
+        val context = webView?.context ?: return false
+        return try {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            cm.setPrimaryClip(ClipData.newPlainText("KernelSU", text))
+            true
+        } catch (e: Exception) {
+            Log.w("KernelSU", "clipboard copy failed", e)
+            false
+        }
+    }
+
+    @JavascriptInterface
+    fun paste(): String {
+        val context = webView?.context ?: return ""
+        return try {
+            val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            if (!cm.hasPrimaryClip()) return ""
+            val clip = cm.primaryClip ?: return ""
+            if (clip.itemCount == 0) return ""
+            clip.getItemAt(0).coerceToText(context)?.toString() ?: ""
+        } catch (e: Exception) {
+            Log.w("KernelSU", "clipboard paste failed", e)
+            ""
         }
     }
 

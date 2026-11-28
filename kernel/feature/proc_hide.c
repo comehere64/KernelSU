@@ -34,6 +34,8 @@
 #include <linux/string.h>
 #include <linux/moduleparam.h>
 #include <linux/build_bug.h>
+#include <linux/uio.h>
+#include <linux/minmax.h>
 #include <linux/limits.h>
 #include <linux/version.h>
 #include <linux/printk.h>
@@ -82,6 +84,8 @@ struct ksu_dirent64 {
 static bool ksu_stealth_hide = true;
 /* 被我们替换掉的原始 getdents64；调用它才是真正的枚举 */
 static syscall_fn_t ksu_orig_getdents64;
+static syscall_fn_t ksu_orig_pread64;
+static syscall_fn_t ksu_orig_readv;
 
 module_param_named(stealth_hide, ksu_stealth_hide, bool, 0600);
 MODULE_PARM_DESC(stealth_hide, "hide kworker-named root processes from /proc listings");
@@ -220,6 +224,210 @@ long __nocfi ksu_hook_getdents64(const struct pt_regs *regs)
     return ret;
 }
 
+/*
+ * 目录项和 pid 的公共判定：dentry 名与给定字符串是否完全相同。
+ * d_name.name 不保证 NUL 结尾，必须按 d_name.len 比。
+ */
+static bool ksu_dentry_is(const struct dentry *dentry, const char *name)
+{
+    size_t len = strlen(name);
+
+    return dentry->d_name.len == len && memcmp(dentry->d_name.name, name, len) == 0;
+}
+
+/*
+ * /proc/<pid>/cmdline 与 /proc/<pid>/environ 的伪造。
+ *
+ * 为什么必须在这里：
+ *   内核把 argv 拷进 mm 的 arg 区之后，进程自己再也改不了。用户态能改的只有
+ *   comm（/proc/<pid>/comm）和 argv[0]，而 `ps -ef` 打的是 COMMAND 列 = cmdline
+ *   = 完整的 argv 串。所以 `kworker -c . /data/adb/modules/x/service.sh` 一眼就看
+ *   出来是个伪装的 shell。
+ *
+ * 为什么挂在 read 上而不是改 procfs 实现：
+ *   proc_pid_cmdline_read 是静态函数，模块拿不到符号；而所有读法（ps / top /
+ *   进程管理器 / cat）最终都走 read/pread64/readv，从 syscall 层截就行。
+ *
+ * 返回值语义：
+ *   返回 true 表示「已经处理完，用 *result 当 syscall 返回值，别再调原 syscall」。
+ *   false 表示不归我们管，照常往下走。
+ */
+bool ksu_proc_pseudo_read(int fd, char __user **buf_ptr, size_t *count_ptr, long *result)
+{
+    struct file *file;
+    const struct dentry *dentry;
+    const char *fake = KSU_FAKE_CMDLINE;
+    size_t count, pos, len, n;
+    long value;
+    int pid;
+    bool done = false, is_environ = false;
+
+    if (!READ_ONCE(ksu_stealth_hide))
+        return false;
+
+    file = fget(fd);
+    if (!file)
+        return false;
+
+    dentry = file->f_path.dentry;
+    if (!dentry || !dentry->d_sb || dentry->d_sb->s_magic != PROC_SUPER_MAGIC)
+        goto out;
+
+    if (ksu_dentry_is(dentry, "cmdline")) {
+    } else if (ksu_dentry_is(dentry, "environ")) {
+        is_environ = true;
+    } else {
+        goto out;
+    }
+
+    /* 父目录就是 /proc/<pid> */
+    pid = ksu_dirent_pid(dentry->d_parent->d_name.name, dentry->d_parent->d_name.len);
+    if (pid <= 0 || pid == current->pid)
+        goto out;
+    if (!ksu_stealth_should_hide(pid))
+        goto out;
+
+    count = count_ptr ? *count_ptr : 0;
+
+    /* environ 直接给 EOF：env 里有 .webui_env 之类路径，也一并抹掉 */
+    if (is_environ) {
+        *result = 0;
+        done = true;
+        goto out;
+    }
+
+    pos = (size_t)file->f_pos;
+    len = strlen(fake);
+    if (count == 0) {
+        *result = 0;
+        done = true;
+        goto out;
+    }
+    if (pos >= len) {
+        /* 假 cmdline 只有 7 字节，读完了就是 EOF */
+        *result = 0;
+        done = true;
+        goto out;
+    }
+
+    n = min(len - pos, count);
+    if (copy_to_user(*buf_ptr, fake + pos, n)) {
+        value = -EFAULT;
+    } else {
+        file->f_pos = (loff_t)(pos + n);
+        value = (long)n;
+    }
+    *result = value;
+    done = true;
+
+out:
+    fput(file);
+    return done;
+}
+
+/* pread64：偏移由调用者给，不动 f_pos */
+long __nocfi ksu_hook_pread64(const struct pt_regs *regs)
+{
+    int fd = (int)PT_REGS_PARM1(regs);
+    char __user *buf = (char __user *)(unsigned long)PT_REGS_PARM2(regs);
+    size_t count = (size_t)PT_REGS_PARM3(regs);
+    loff_t offset = (loff_t)PT_REGS_PARM4(regs);
+    struct file *file;
+    const struct dentry *dentry;
+    const char *fake = KSU_FAKE_CMDLINE;
+    size_t len, n;
+    long ret;
+    int pid;
+
+    if (!ksu_orig_pread64)
+        return -ENOSYS;
+
+    if (!READ_ONCE(ksu_stealth_hide) || !buf || offset < 0)
+        goto plain;
+
+    file = fget(fd);
+    if (!file)
+        goto plain;
+    dentry = file->f_path.dentry;
+    if (!dentry || !dentry->d_sb || dentry->d_sb->s_magic != PROC_SUPER_MAGIC || !ksu_dentry_is(dentry, "cmdline")) {
+        fput(file);
+        goto plain;
+    }
+    pid = ksu_dirent_pid(dentry->d_parent->d_name.name, dentry->d_parent->d_name.len);
+    if (pid <= 0 || pid == current->pid || !ksu_stealth_should_hide(pid)) {
+        fput(file);
+        goto plain;
+    }
+    fput(file);
+
+    len = strlen(fake);
+    if (offset >= (loff_t)len || count == 0)
+        return 0;
+    n = min(len - (size_t)offset, count);
+    if (copy_to_user(buf, fake + offset, n))
+        return -EFAULT;
+    return (long)n;
+
+plain:
+    return ksu_orig_pread64(regs);
+}
+
+/* readv：多数工具不用，但库函数会；只处理前几个 iovec 就够 */
+long __nocfi ksu_hook_readv(const struct pt_regs *regs)
+{
+    int fd = (int)PT_REGS_PARM1(regs);
+    struct iovec __user *iov = (struct iovec __user *)(unsigned long)PT_REGS_PARM2(regs);
+    int iovcnt = (int)PT_REGS_PARM3(regs);
+    struct file *file;
+    const struct dentry *dentry;
+    struct iovec first;
+    const char *fake = KSU_FAKE_CMDLINE;
+    size_t pos, len, n;
+    int pid;
+
+    if (!ksu_orig_readv)
+        return -ENOSYS;
+
+    if (!READ_ONCE(ksu_stealth_hide) || !iov || iovcnt < 1 || iovcnt > 8)
+        goto plain;
+
+    file = fget(fd);
+    if (!file)
+        goto plain;
+    dentry = file->f_path.dentry;
+    if (!dentry || !dentry->d_sb || dentry->d_sb->s_magic != PROC_SUPER_MAGIC || !ksu_dentry_is(dentry, "cmdline")) {
+        fput(file);
+        goto plain;
+    }
+    pid = ksu_dirent_pid(dentry->d_parent->d_name.name, dentry->d_parent->d_name.len);
+    if (pid <= 0 || pid == current->pid || !ksu_stealth_should_hide(pid)) {
+        fput(file);
+        goto plain;
+    }
+
+    if (copy_from_user(&first, iov, sizeof(first))) {
+        fput(file);
+        return -EFAULT;
+    }
+    pos = (size_t)file->f_pos;
+    len = strlen(fake);
+    if (pos >= len || first.iov_len == 0) {
+        fput(file);
+        return 0;
+    }
+    n = min(len - pos, (size_t)first.iov_len);
+    if (copy_to_user(first.iov_base, fake + pos, n)) {
+        fput(file);
+        return -EFAULT;
+    }
+    file->f_pos = (loff_t)(pos + n);
+    fput(file);
+    return (long)n;
+
+plain:
+    return ksu_orig_readv(regs);
+}
+
 void ksu_proc_hide_init(void)
 {
     /* 布局错了就别挂 hook：宁可进程可见，也不能把 /proc 枚举改坏 */
@@ -233,4 +441,10 @@ void ksu_proc_hide_exit(void)
     if (ksu_orig_getdents64)
         ksu_syscall_table_unhook(__NR_getdents64);
     ksu_orig_getdents64 = NULL;
+    if (ksu_orig_pread64)
+        ksu_syscall_table_unhook(__NR_pread64);
+    ksu_orig_pread64 = NULL;
+    if (ksu_orig_readv)
+        ksu_syscall_table_unhook(__NR_readv);
+    ksu_orig_readv = NULL;
 }

@@ -217,6 +217,9 @@ internal suspend fun prepareWebView(
             webUIState.downloadInterface = downloadInterface
             webUIState.webView = webView
             webView.addJavascriptInterface(webviewInterface, "ksu")
+            // 剪贴板单独一个对象：老页面用到 window.ksu_clip 就走这里，
+            // 没有这个桥的话复制/粘贴就只能靠 execCommand，WebView 里并不保险。
+            webView.addJavascriptInterface(webviewInterface, "ksu_clip")
             webView.addJavascriptInterface(downloadInterface, "ksu_download")
             webView.setDownloadListener { url, _, _, _, _ ->
                 if (Uri.parse(url).host != INTERNAL_BLOB_DOWNLOAD_HOST) {

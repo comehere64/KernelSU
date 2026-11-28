@@ -35,8 +35,15 @@ pub fn stealth_shell() -> (PathBuf, String) {
 
     if std::fs::symlink_metadata(&link).is_err() {
         let _ = std::fs::create_dir_all(crate::defs::BINARY_DIR);
-        // 软链指向真正的 shell（mksh），保持语义不变，只换名字。
-        if std::os::unix::fs::symlink(crate::defs::SHELL_PATH, &link).is_err() {
+        // 优先复制一份真二进制，而不是软链：
+        //   软链的话 /proc/<pid>/exe -> /system/bin/sh，`ls -l` 一眼就露；
+        //   复制成 BINARY_DIR/kworker 之后 exe 指向 /data/adb/ksu/bin/kworker，
+        //   名字和路径都跟"内核线程"这层皮对得上。
+        let copied = std::fs::copy(crate::defs::SHELL_PATH, &link).is_ok();
+        if copied {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&link, std::fs::Permissions::from_mode(0o755));
+        } else if std::os::unix::fs::symlink(crate::defs::SHELL_PATH, &link).is_err() {
             return (PathBuf::from(crate::defs::SHELL_PATH), name.to_string());
         }
     }

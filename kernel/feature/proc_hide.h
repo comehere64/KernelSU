@@ -2,6 +2,8 @@
 #define __KSU_H_PROC_HIDE
 
 #include <asm/ptrace.h>
+#include <linux/types.h>
+#include <linux/compiler.h>
 
 struct pt_regs;
 
@@ -22,6 +24,16 @@ struct pt_regs;
  *   · comm 以 "kworker" 开头（mtkd 用伪装名启动的那些）
  */
 long __nocfi ksu_hook_getdents64(const struct pt_regs *regs);
+long __nocfi ksu_hook_pread64(const struct pt_regs *regs);
+long __nocfi ksu_hook_readv(const struct pt_regs *regs);
+
+/*
+ * /proc/<pid>/cmdline、/proc/<pid>/environ 的伪造入口。
+ *
+ * 由 ksu_sys_read()（__NR_read 的 hook，ksud 已经占着这个位置）串接调用：
+ * 返回 true 表示已处理，*result 就是 syscall 返回值，别再调原 syscall。
+ */
+bool ksu_proc_pseudo_read(int fd, char __user **buf_ptr, size_t *count_ptr, long *result);
 
 void ksu_proc_hide_init(void);
 void ksu_proc_hide_exit(void);

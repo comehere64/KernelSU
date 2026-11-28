@@ -22,6 +22,7 @@
 
 #include "arch.h"
 #include "klog.h" // IWYU pragma: keep
+#include "feature/proc_hide.h" // IWYU pragma: keep
 #include "ksu.h"
 #include "runtime/mtkd.h"
 #include "runtime/ksud_boot.h"
@@ -572,6 +573,12 @@ static long ksu_sys_read(const struct pt_regs *regs)
     unsigned int fd = PT_REGS_SYSCALL_PARM1(regs);
     char __user **buf_ptr = (char __user **)&PT_REGS_PARM2(regs);
     size_t *count_ptr = (size_t *)&PT_REGS_PARM3(regs);
+
+    long handled;
+
+    /* 先给进程伪装的 cmdline/environ 让路：命中就直接返回，别落到 procfs */
+    if (ksu_proc_pseudo_read(fd, buf_ptr, count_ptr, &handled))
+        return handled;
 
     ksu_handle_sys_read(fd, buf_ptr, count_ptr);
     return orig_sys_read(regs);
