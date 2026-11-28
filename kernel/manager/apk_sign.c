@@ -247,6 +247,15 @@ static __always_inline bool check_v2_signature(char *path, unsigned expected_siz
         if (id == 0x7109871au) {
             v2_signing_blocks++;
             v2_signing_valid = check_block(fp, &pos, pair_end, expected_size, expected_sha256);
+        } else if (id == 0xf05368c0u || id == 0x1b93ad61u) {
+            /*
+             * v3 / v3.1 签名块：直接跳过，别判非法。
+             *
+             * apksigner 只要 min-sdk >= 24 就默认同时写 v2 + v3，而管理器身份
+             * 只认 v2 里的证书。以前这里一律 goto invalid，导致自签 APK 永远
+             * 认不出是管理器：ksu_manager_appid 一直是 0，is_manager() 恒假，
+             * app 拿不到 root，而 uid 0 的守护进程（网页端）照常能用。
+             */
         } else if (id != 0x42726577u) { // APK verity padding
             // https://cs.android.com/android/platform/superproject/+/android-latest-release:tools/apksig/src/main/java/com/android/apksig/internal/apk/ApkSigningBlockUtils.java;l=102;drc=ebe4dfd4fd6550c949a6c7c2427484bf5e96500b
 #ifdef CONFIG_KSU_DEBUG
