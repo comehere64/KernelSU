@@ -73,6 +73,10 @@ pub fn run(package_name: &String, kmi: Option<String>, allow_shell: bool) -> Res
     // will be blocked by SELinux because its fsec->sid is still u:r:su:s0 instead of u:r:ksu:s0.
     utils::reset_std()?;
 
+    // late-load 继承的是调用者的 mount namespace，必须切到 init 的，
+    // 否则后面装模块/挂载会落在错误的 ns 里 (#4032)。
+    utils::switch_mnt_ns(1).context("Failed to switch to init mount namespace")?;
+
     utils::umask(0);
 
     if let Err(e) = crate::module_config::clear_all_temp_configs() {

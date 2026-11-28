@@ -127,6 +127,8 @@ void apply_kernelsu_rules()
     ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "file", "read");
     ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "file", "open");
     ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "file", "getattr");
+    // logd 要读 root 进程的 attr 才能打日志里的进程信息 (#4019)
+    ksu_allow(db, "logd", KERNEL_SU_DOMAIN, "process", "getattr");
 
     // dumpsys, send fd
     ksu_allow(db, "domain", KERNEL_SU_DOMAIN, "fd", "use");

@@ -3,6 +3,8 @@
 #include "supercall/internal.h"
 #include "manager/manager_identity.h"
 #include "policy/allowlist.h"
+#include "util.h"
+#include "objsec.h"
 
 bool only_manager(void)
 {
@@ -12,6 +14,14 @@ bool only_manager(void)
 bool only_root(void)
 {
     return current_uid().val == 0;
+}
+
+// 改 sepolicy 是高危操作：不只要有 root，还要有 avc 的 LOAD_POLICY 权限 (#4000)。
+// 光看 uid==0 的话，刚拿到 root 的进程能直接篡改全局策略。
+bool require_load_policy_perm(void)
+{
+    return ksu_avc_has_perm_compat(current_sid(), SECINITSID_SECURITY, SECCLASS_SECURITY, SECURITY__LOAD_POLICY,
+                                   NULL) == 0;
 }
 
 bool manager_or_root(void)
