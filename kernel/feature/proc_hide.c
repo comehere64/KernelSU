@@ -345,7 +345,6 @@ long __nocfi ksu_hook_pread64(const struct pt_regs *regs)
     const struct dentry *dentry;
     const char *fake = KSU_FAKE_CMDLINE;
     size_t len, n;
-    long ret;
     int pid;
 
     if (!ksu_orig_pread64)
