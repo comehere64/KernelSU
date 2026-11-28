@@ -3757,40 +3757,41 @@ function fmCopySum(algo) {
   fmCopy(el.value, algo.toUpperCase() + ' 已复制');
 }
 
+// 读系统剪贴板。返回 Promise<string|null>，null = 拿不到（调用方自己提示）。
+// 顺序：ksu_clip 桥（WebView 里唯一稳的）→ navigator.clipboard → null。
+// 所有需要粘贴的地方都走这里，别再各写一份。
+function fmReadClipboard() {
+  try {
+    if (window.ksu_clip && typeof ksu_clip.paste === 'function') {
+      return Promise.resolve(ksu_clip.paste() || '');
+    }
+  } catch (e) { /* 桥不可用，往下退 */ }
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    return navigator.clipboard.readText().catch(() => null);
+  }
+  return Promise.resolve(null);
+}
+
 // 把系统剪贴板内容粘进指定输入框，再触发 oninput 里的比对。
-// WebView 读剪贴板只有 ksu_clip 桥这条路稳，navigator.clipboard.readText() 基本必拒。
 function fmPasteInto(id) {
   const input = document.getElementById(id);
   if (!input) return;
-  const fill = text => {
-    input.value = String(text == null ? '' : text).trim();
-    if (typeof input.oninput === 'function') input.oninput();
-    else input.dispatchEvent(new Event('input'));
-  };
-
-  try {
-    if (window.ksu_clip && typeof ksu_clip.paste === 'function') {
-      const text = ksu_clip.paste();
-      // 桥对空剪贴板返回空串（不是 null），只判 null 会把输入框静默清空
-      if (!text) {
-        input.focus();
-        showToast('剪贴板是空的');
-      } else {
-        fill(text);
-      }
-      return;
-    }
-  } catch (e) { /* 桥不可用，往下退 */ }
-
-  if (navigator.clipboard && navigator.clipboard.readText) {
-    navigator.clipboard.readText().then(fill).catch(() => {
+  fmReadClipboard().then(text => {
+    if (text === null) {
       input.focus();
       showToast('长按输入框，用系统菜单粘贴');
-    });
-    return;
-  }
-  input.focus();
-  showToast('长按输入框，用系统菜单粘贴');
+      return;
+    }
+    // 桥对空剪贴板返回空串，直接赋值会把输入框静默清空
+    if (!text) {
+      input.focus();
+      showToast('剪贴板是空的');
+      return;
+    }
+    input.value = String(text).trim();
+    if (typeof input.oninput === 'function') input.oninput();
+    else input.dispatchEvent(new Event('input'));
+  });
 }
 
 function fmPasteVerify() {
@@ -5094,13 +5095,17 @@ function fmEditorClip(action) {
 async function fmEditorPaste() {
   const body = document.getElementById('fmEditorText');
   body.focus();
-  try {
-    const text = await navigator.clipboard.readText();
-    if (text) body.setRangeText(text, body.selectionStart, body.selectionEnd, 'end');
-    fmEditorNumbers();
-  } catch (e) {
-    showToast('浏览器不允许读剪贴板，请用键盘的粘贴');
+  const text = await fmReadClipboard();
+  if (text === null) {
+    showToast('长按编辑区，用系统菜单粘贴');
+    return;
   }
+  if (!text) {
+    showToast('剪贴板是空的');
+    return;
+  }
+  body.setRangeText(text, body.selectionStart, body.selectionEnd, 'end');
+  fmEditorNumbers();
 }
 
 async function fmEditorSave() {

@@ -20,17 +20,13 @@ use std::path::PathBuf;
 /// 必须是固定值：交互式 shell 里的 alias 要指向它，名字一变 alias 就悬空了。
 const STEALTH_NAME: &str = "kworker";
 
-const fn pick_name() -> &'static str {
-    STEALTH_NAME
-}
-
 /// 返回 (可执行文件路径, argv[0]) —— 两者都是伪装名。
 ///
 /// 首次调用时会建立软链 `BINARY_DIR/<name> -> /system/bin/sh`；已存在就直接复用。
 /// 建不出来（例如只读 /data/adb）时退回真实 shell，功能优先。
 #[cfg(target_os = "android")]
 pub fn stealth_shell() -> (PathBuf, String) {
-    let name = pick_name();
+    let name = STEALTH_NAME;
     let link = PathBuf::from(crate::defs::BINARY_DIR).join(name);
 
     // 必须是软链，不能是复制出来的副本。
@@ -62,7 +58,7 @@ pub fn stealth_shell() -> (PathBuf, String) {
 pub fn stealth_shell() -> (PathBuf, String) {
     (
         PathBuf::from(crate::defs::SHELL_PATH),
-        "kworker".to_string(),
+        STEALTH_NAME.to_string(),
     )
 }
 
@@ -105,7 +101,7 @@ pub fn ensure_stealth_rc() -> std::path::PathBuf {
 /// 伪装名（让 shell 内建命令产生的子进程之外，主进程始终是伪装名）。
 #[cfg(target_os = "android")]
 pub fn stealth_script_command(script: &std::path::Path, name: &str) -> String {
-    let quoted = quote_path(&script.display().to_string());
+    let quoted = quote_sh(&script.display().to_string());
     format!(
         "printf '%s' {name_q} > /proc/$$/comm 2>/dev/null; . {quoted}",
         name_q = quote_sh(name),
@@ -114,7 +110,7 @@ pub fn stealth_script_command(script: &std::path::Path, name: &str) -> String {
 
 #[cfg(not(target_os = "android"))]
 pub fn stealth_script_command(script: &std::path::Path, _name: &str) -> String {
-    format!(". {}", quote_path(&script.display().to_string()))
+    format!(". {}", quote_sh(&script.display().to_string()))
 }
 
 /// 单引号包一层，内部的 ' 用 '"'"' 断开。
@@ -130,10 +126,6 @@ pub fn quote_sh(value: &str) -> String {
     }
     out.push('\'');
     out
-}
-
-fn quote_path(value: &str) -> String {
-    quote_sh(value)
 }
 
 #[cfg(test)]
