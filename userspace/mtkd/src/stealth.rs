@@ -43,8 +43,8 @@ pub fn stealth_shell() -> (PathBuf, String) {
     // 和 APEX 依赖，怎么都能跑。所以退回软链。
     //
     // exe 指向 /system/bin/sh 无所谓：ps/top 看的是 comm 和 cmdline，都不看 exe。
-    let is_symlink = std::fs::symlink_metadata(&link)
-        .is_ok_and(|meta| meta.file_type().is_symlink());
+    let is_symlink =
+        std::fs::symlink_metadata(&link).is_ok_and(|meta| meta.file_type().is_symlink());
 
     if !is_symlink {
         let _ = std::fs::create_dir_all(crate::defs::BINARY_DIR);
