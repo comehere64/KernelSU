@@ -451,19 +451,68 @@ pub fn remove(paths: &[String], recursive: bool) -> Result<()> {
     Ok(())
 }
 
-fn for_each_in_tree<F>(path: &Path, recursive: bool, apply: &mut F) -> Result<()>
+/// 递归范围。
+///
+/// MT 的权限/所有者/时间页把「同时应用到所有子文件」和「同时应用到所有子文件夹」
+/// 做成两个独立的勾，所以这里必须区分，不能只有一个 recursive。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Recurse {
+    None,
+    Files,
+    Dirs,
+    All,
+}
+
+impl Recurse {
+    pub const fn from_flags(files: bool, dirs: bool) -> Self {
+        match (files, dirs) {
+            (true, true) => Recurse::All,
+            (true, false) => Recurse::Files,
+            (false, true) => Recurse::Dirs,
+            (false, false) => Recurse::None,
+        }
+    }
+
+    const fn wants(self, is_dir: bool) -> bool {
+        match self {
+            Recurse::All => true,
+            Recurse::Files => !is_dir,
+            Recurse::Dirs => is_dir,
+            Recurse::None => false,
+        }
+    }
+}
+
+/// 目标本身一定处理；子项按 Recurse 过滤。
+fn for_each_in_tree<F>(path: &Path, recurse: Recurse, apply: &mut F) -> Result<()>
 where
     F: FnMut(&Path) -> Result<()>,
 {
     apply(path)?;
-    let descends = fs::symlink_metadata(path)
+    walk_descendants(path, recurse, apply)
+}
+
+fn walk_descendants<F>(dir: &Path, recurse: Recurse, apply: &mut F) -> Result<()>
+where
+    F: FnMut(&Path) -> Result<()>,
+{
+    if recurse == Recurse::None {
+        return Ok(());
+    }
+    let descends = fs::symlink_metadata(dir)
         .map(|md| md.is_dir() && !md.file_type().is_symlink())
         .unwrap_or(false);
-    if recursive && descends {
-        for item in fs::read_dir(path)? {
-            let item = item?;
-            for_each_in_tree(&item.path(), true, apply)?;
+    if !descends {
+        return Ok(());
+    }
+    for item in fs::read_dir(dir)? {
+        let item = item?;
+        let child = item.path();
+        let is_dir = item.file_type().is_ok_and(|t| t.is_dir());
+        if recurse.wants(is_dir) {
+            apply(&child)?;
         }
+        walk_descendants(&child, recurse, apply)?;
     }
     Ok(())
 }
@@ -476,9 +525,10 @@ fn c_path(path: &Path) -> Result<std::ffi::CString> {
 }
 
 #[cfg(unix)]
-pub fn chmod(paths: &[String], mode: u32, recursive: bool) -> Result<()> {
+pub fn chmod(paths: &[String], mode: u32, recurse_files: bool, recurse_dirs: bool) -> Result<()> {
+    let recurse = Recurse::from_flags(recurse_files, recurse_dirs);
     for path in paths {
-        for_each_in_tree(Path::new(path), recursive, &mut |target| {
+        for_each_in_tree(Path::new(path), recurse, &mut |target| {
             let c = c_path(target)?;
             if unsafe { libc::chmod(c.as_ptr(), mode as libc::mode_t) } != 0 {
                 return Err(io::Error::last_os_error())
@@ -491,7 +541,12 @@ pub fn chmod(paths: &[String], mode: u32, recursive: bool) -> Result<()> {
 }
 
 #[cfg(not(unix))]
-pub fn chmod(_paths: &[String], _mode: u32, _recursive: bool) -> Result<()> {
+pub fn chmod(
+    _paths: &[String],
+    _mode: u32,
+    _recurse_files: bool,
+    _recurse_dirs: bool,
+) -> Result<()> {
     bail!("当前平台不支持修改权限")
 }
 
@@ -561,9 +616,16 @@ pub fn resolve_owner(_spec: &str) -> Result<(u32, u32)> {
     bail!("当前平台不支持解析属主")
 }
 
-pub fn chown(paths: &[String], uid: u32, gid: u32, recursive: bool) -> Result<()> {
+pub fn chown(
+    paths: &[String],
+    uid: u32,
+    gid: u32,
+    recurse_files: bool,
+    recurse_dirs: bool,
+) -> Result<()> {
+    let recurse = Recurse::from_flags(recurse_files, recurse_dirs);
     for path in paths {
-        for_each_in_tree(Path::new(path), recursive, &mut |target| {
+        for_each_in_tree(Path::new(path), recurse, &mut |target| {
             let c = c_path(target)?;
             if unsafe { libc::chown(c.as_ptr(), uid, gid) } != 0 {
                 return Err(io::Error::last_os_error())
@@ -576,7 +638,13 @@ pub fn chown(paths: &[String], uid: u32, gid: u32, recursive: bool) -> Result<()
 }
 
 #[cfg(not(unix))]
-pub fn chown(_paths: &[String], _uid: u32, _gid: u32, _recursive: bool) -> Result<()> {
+pub fn chown(
+    _paths: &[String],
+    _uid: u32,
+    _gid: u32,
+    _recurse_files: bool,
+    _recurse_dirs: bool,
+) -> Result<()> {
     bail!("当前平台不支持修改所有者")
 }
 
@@ -2115,11 +2183,11 @@ mod tests {
         fs::write(&file, b"x").expect("write");
         let path = vec![file.display().to_string()];
 
-        chmod(&path, 0o600, false).expect("chmod");
+        chmod(&path, 0o600, false, false).expect("chmod");
         assert_eq!(fs::metadata(&file).expect("stat").mode() & 0o7777, 0o600);
 
         let md = fs::metadata(&file).expect("stat");
-        chown(&path, md.uid(), md.gid(), false).expect("chown to itself is a no-op");
+        chown(&path, md.uid(), md.gid(), false, false).expect("chown to itself is a no-op");
     }
 
     #[cfg(unix)]
@@ -2131,7 +2199,7 @@ mod tests {
         fs::create_dir_all(&sub).expect("mkdirs");
         fs::write(sub.join("f"), b"x").expect("write");
 
-        chmod(&[dir.display().to_string()], 0o700, true).expect("recursive chmod");
+        chmod(&[dir.display().to_string()], 0o700, true, true).expect("recursive chmod");
         assert_eq!(fs::metadata(&sub).expect("stat").mode() & 0o7777, 0o700);
         assert_eq!(
             fs::metadata(sub.join("f")).expect("stat").mode() & 0o7777,

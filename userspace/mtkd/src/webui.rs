@@ -2208,7 +2208,12 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
         }
 
         ("POST", "/api/fs/mtime") => rooted_ok(stream, req, |body: FsMtime| {
-            crate::webui_props::set_mtime(&body.path, body.mtime)
+            crate::webui_props::set_mtime_tree(
+                &body.path,
+                body.mtime,
+                body.recurse_files,
+                body.recurse_dirs,
+            )
         }),
 
         ("GET", "/api/fs/props") => match require_param(req, "path") {
@@ -2305,7 +2310,7 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
 
         ("POST", "/api/fs/chmod") => rooted_ok(stream, req, |body: FsMode| {
             let mode = crate::webui_files::parse_mode(&body.mode)?;
-            crate::webui_files::chmod(&body.paths, mode, body.recursive)
+            crate::webui_files::chmod(&body.paths, mode, body.recurse_files, body.recurse_dirs)
         }),
 
         ("POST", "/api/fs/chown") => rooted_ok(stream, req, |body: FsOwner| {
@@ -2316,7 +2321,7 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             } else {
                 crate::webui_files::resolve_owner(body.owner.trim())?
             };
-            crate::webui_files::chown(&body.paths, uid, gid, body.recursive)
+            crate::webui_files::chown(&body.paths, uid, gid, body.recurse_files, body.recurse_dirs)
         }),
 
         ("POST", "/api/fs/write") => rooted_ok(stream, req, |body: FsWrite| {
@@ -3704,6 +3709,10 @@ struct FsDelete {
 struct FsMtime {
     path: String,
     mtime: i64,
+    #[serde(default)]
+    recurse_files: bool,
+    #[serde(default)]
+    recurse_dirs: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -3711,7 +3720,9 @@ struct FsMode {
     paths: Vec<String>,
     mode: String,
     #[serde(default)]
-    recursive: bool,
+    recurse_files: bool,
+    #[serde(default)]
+    recurse_dirs: bool,
 }
 
 #[derive(serde::Deserialize)]
@@ -3724,8 +3735,11 @@ struct FsOwner {
     /// 允许直接给 "user:group"（名字形式），由后端解析成 uid/gid
     #[serde(default)]
     owner: String,
+    /// 「同时应用到所有子文件」/「同时应用到所有子文件夹」是两个独立开关
     #[serde(default)]
-    recursive: bool,
+    recurse_files: bool,
+    #[serde(default)]
+    recurse_dirs: bool,
 }
 
 #[derive(serde::Deserialize)]

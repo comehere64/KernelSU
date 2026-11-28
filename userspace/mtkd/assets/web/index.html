@@ -519,6 +519,9 @@ body.modal-open { overflow: hidden; }
     .mt-link { background: none; border: 0; padding: 6px 2px; color: var(--accent); font-size: 14px; cursor: pointer; }
     .mt-kv-mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; word-break: break-all; color: var(--text-primary); }
     .mt-field input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; }
+    .mt-field .mt-k { display: block; font-size: 12px; color: var(--text-tertiary); margin-bottom: 4px; }
+    .mt-select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-tertiary); color: var(--text-primary); font-size: 14px; appearance: none; }
+    .mt-chk { margin-top: 10px; }
     .mt-hash { display: flex; gap: 18px; flex-wrap: wrap; padding: 4px 0 8px; }
     .mt-hash-out { min-height: 20px; }
 
@@ -3571,7 +3574,6 @@ function fmPropsTable(p) {
 
 let FM_PROPS_PATH = '';
 let FM_PROPS = null;
-let FM_PICKER = null;
 
 function fmAttr() {
   const paths = fmSelPaths();
@@ -3583,8 +3585,8 @@ function fmAttr() {
       `<div class="mt-row"><div class="mt-k">已选</div><div class="mt-v">${paths.length} 项</div></div>` +
       `</div><div class="mt-gap"></div>` +
       `<div class="mt-actions">` +
-      `<button class="mt-link" onclick="fmPermDialog(511, true)">文件权限</button>` +
-      `<button class="mt-link" onclick="fmOwnerGroupBoth(true)">所有者与用户组</button>` +
+      `<button class="mt-link" onclick="fmPermDialog()">文件权限</button>` +
+      `<button class="mt-link" onclick="fmOwnerGroupPage()">所有者与用户组</button>` +
       `</div>`,
       null, '关闭');
     return;
@@ -3598,21 +3600,26 @@ function fmAttr() {
       ['目录', fmHtml(dirOf(p.path))],
       ['类型', fmHtml(p.is_dir ? '文件夹' : '文件')],
       ['大小', fmHtml(p.size_text)],
-      ['修改时间', fmTime(p.mtime) || '—'],
+      ['修改时间', fmTime(p.mtime) || '—', 'fmMtimeDialog()'],
     ];
     if (p.is_symlink) rows.push(['链接目标', fmHtml(p.symlink_target || '—')]);
 
     fmDialog('属性',
       `<div class="mt-attr">` +
-      rows.map(([k, v]) => `<div class="mt-row"><div class="mt-k">${k}</div><div class="mt-v">${v}</div></div>`).join('') +
+      rows.map(([k, v, act]) =>
+        `<div class="mt-row${act ? ' mt-tap' : ''}"${act ? ` onclick="${act}"` : ''}>` +
+        `<div class="mt-k">${k}</div><div class="mt-v">${v}</div></div>`).join('') +
+      `</div><div class="mt-gap"></div>` +
+      // 权限 / 所有者与用户组 / 修改时间 都可点，跳的都是「更多」里那三个页面，
+      // 不是另开一套 —— MT 就是这么走的。
+      `<div class="mt-attr">` +
+      `<div class="mt-row mt-tap" onclick="fmPermDialog()">` +
+      `<div class="mt-k">权限</div><div class="mt-v">${fmHtml(p.mode_text)}(${(p.perm || 0).toString(8)})</div></div>` +
       `</div><div class="mt-gap"></div>` +
       `<div class="mt-attr">` +
-      `<div class="mt-row"><div class="mt-k">权限</div><div class="mt-v">${fmHtml(p.mode_text)}(${(p.perm || 0).toString(8)})</div></div>` +
-      `</div><div class="mt-gap"></div>` +
-      `<div class="mt-attr">` +
-      `<div class="mt-row mt-tap" onclick="fmOwnerPicker(function(uid){fmApplyChown(uid, null, false);})">` +
+      `<div class="mt-row mt-tap" onclick="fmOwnerGroupPage()">` +
       `<div class="mt-k">所有者</div><div class="mt-v">${fmHtml(p.user_name)} <span class="mt-dim">(${p.uid})</span></div></div>` +
-      `<div class="mt-row mt-tap" onclick="fmGroupPicker(function(gid){fmApplyChown(null, gid, false);})">` +
+      `<div class="mt-row mt-tap" onclick="fmOwnerGroupPage()">` +
       `<div class="mt-k">用户组</div><div class="mt-v">${fmHtml(p.group_name)} <span class="mt-dim">(${p.gid})</span></div></div>` +
       `</div>` +
       `<div class="mt-foot">` +
@@ -3634,8 +3641,8 @@ function fmMoreMenu() {
   fmDialog('更多',
     `<div class="mt-actions" style="display:flex;flex-direction:column;align-items:flex-start;gap:14px;padding:6px 4px;">` +
     `<button class="mt-link" onclick="fmMtimeDialog()">修改时间</button>` +
-    `<button class="mt-link" onclick="fmPermDialog(FM_PROPS ? (FM_PROPS.perm || 0o644) : 0o644, FM_PROPS ? !!FM_PROPS.is_dir : false)">文件权限</button>` +
-    `<button class="mt-link" onclick="fmOwnerGroupBoth()">所有者与用户组</button>` +
+    `<button class="mt-link" onclick="fmPermDialog()">文件权限</button>` +
+    `<button class="mt-link" onclick="fmOwnerGroupPage()">所有者与用户组</button>` +
     `</div>`,
     null, '取消');
 }
@@ -3829,6 +3836,8 @@ function fmMtimeDialog() {
   // 事后 body.innerHTML += 会重建 DOM，用户已经输入的字符会被冲掉。
   fmDialog('修改时间',
     `<div class="mt-field"><input type="text" id="fmMtime" value="${fmHtml(cur)}" placeholder="2026-11-25 12:21:56"></div>` +
+    `<label class="mt-chk"><input type="checkbox" id="m_files">同时应用到所有子文件</label>` +
+    `<label class="mt-chk"><input type="checkbox" id="m_dirs">同时应用到所有子文件夹</label>` +
     `<div class="mt-foot">` +
     `<button class="mt-link" onclick="fmMtimeNow()">当前时间</button>` +
     `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
@@ -3849,7 +3858,11 @@ function fmMtimeApply() {
   if (!sec) { showToast('时间格式应为 YYYY-MM-DD HH:mm:ss'); return; }
   fmApi('/api/fs/mtime', {
     method: 'POST', headers: FM_JSON,
-    body: JSON.stringify({ path: FM_PROPS_PATH, mtime: sec }),
+    body: JSON.stringify({
+      path: FM_PROPS_PATH, mtime: sec,
+      recurse_files: !!(document.getElementById('m_files') || {}).checked,
+      recurse_dirs: !!(document.getElementById('m_dirs') || {}).checked,
+    }),
   }).then(() => {
     showToast('已修改');
     fmDialogClose();
@@ -3872,8 +3885,13 @@ function parseDate(text) {
 
 // ---- MT 风格权限对话框：读/写/执行 × 所有者/用户组/其它 ----
 function fmPermDialog(perm, isDir) {
+  // 从属性页点进来时不传参，自己从 FM_PROPS 取，保证和「更多 → 文件权限」同一个页面
+  const src = (perm === undefined || perm === null) ? (FM_PROPS && FM_PROPS.perm)
+                                                     : perm;
+  const dir = (isDir === undefined || isDir === null) ? !!(FM_PROPS && FM_PROPS.is_dir)
+                                                      : !!isDir;
   // 只接受权限位（0666 这种）；传完整 st_mode 会把类型位带进复选框
-  const mode = (Number(perm) || 0) & 0o7777;
+  const mode = (Number(src) || 0) & 0o7777;
   const box = (bit, id, label) =>
     `<div class="mt-perm-cell"><label><input type="checkbox" id="${id}" data-bit="${bit}"${(mode & bit) ? ' checked' : ''}><span>${label}</span></label></div>`;
   fmDialog('权限',
@@ -3891,7 +3909,9 @@ function fmPermDialog(perm, isDir) {
     `<label class="mt-chk"><input type="checkbox" id="p_sgid"${(mode & 0o2000) ? ' checked' : ''}>设置GID</label>` +
     `<label class="mt-chk"><input type="checkbox" id="p_sticky"${(mode & 0o1000) ? ' checked' : ''}>粘滞</label>` +
     `</div>` +
-    `<div class="mt-perm-preview" id="p_preview">${permText(mode, isDir)}</div>` +
+    `<div class="mt-perm-preview" id="p_preview">${permText(mode, dir)}</div>` +
+    `<label class="mt-chk"><input type="checkbox" id="p_files">同时应用到所有子文件</label>` +
+    `<label class="mt-chk"><input type="checkbox" id="p_dirs">同时应用到所有子文件夹</label>` +
     `</div>` +
     `<div class="mt-foot">` +
     `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
@@ -3901,7 +3921,7 @@ function fmPermDialog(perm, isDir) {
   document.querySelectorAll('.mt-perm input[type=checkbox]').forEach(el => {
     el.addEventListener('change', () => {
       const preview = document.getElementById('p_preview');
-      if (preview) preview.textContent = permText(fmPermValue(), isDir);
+      if (preview) preview.textContent = permText(fmPermValue(), dir);
     });
   });
 }
@@ -3937,7 +3957,11 @@ function fmPermApply() {
   if (!paths.length) return;
   fmApi('/api/fs/chmod', {
     method: 'POST', headers: FM_JSON,
-    body: JSON.stringify({ paths, mode, recursive: false }),
+    body: JSON.stringify({
+      paths, mode,
+      recurse_files: !!(document.getElementById('p_files') || {}).checked,
+      recurse_dirs: !!(document.getElementById('p_dirs') || {}).checked,
+    }),
   }).then(() => {
     showToast('已修改权限');
     fmDialogClose();
@@ -3946,114 +3970,72 @@ function fmPermApply() {
   }).catch(e => showToast('失败：' + e.message));
 }
 
-// ---- MT 风格所有者 / 用户组选择：列表 + 搜索 ----
-/// 「所有者与用户组」：先选所有者，再选用户组，两次都只改对应的一半。
-function fmOwnerGroupBoth(recursive) {
-  const rec = !!recursive;
-  fmOwnerPicker(function (uid) {
-    fmApplyChown(uid, null, rec);
-    fmGroupPicker(function (gid) {
-      fmApplyChown(null, gid, rec);
-    });
-  });
-}
+// ---- 所有者与用户组：MT 是同一个页面，两个下拉 + 两个递归勾 ----
+// 之前拆成 fmOwnerPicker / fmGroupPicker 两个页面，和 MT 不一致，属性页点哪个
+// 都要跳两次，这里合成一个。
+function fmOwnerGroupPage() {
+  const paths = fmSelPaths();
+  if (!paths.length) return;
+  const p = FM_PROPS && paths.length === 1 ? FM_PROPS : null;
+  const uid = p ? p.uid : null;
+  const gid = p ? p.gid : null;
+  const uName = p ? p.user_name : '';
+  const gName = p ? p.group_name : '';
 
-function fmOwnerPicker(onPick) {
-  const cur = (FM_PROPS && fmSelPaths()[0] === FM_PROPS_PATH) ? FM_PROPS.uid : -1;
-  fmPickerPage('所有者', '/api/fs/users', cur, (item) => {
-    // 必须先关：fmOwnerGroupBoth 会在回调里接着打开用户组选择框，
-    // 反过来的话刚打开就被 fmDialogClose() 关掉了。
-    fmDialogClose();
-    onPick(item.id);
-  }, 'u0_a333');
-}
-
-function fmGroupPicker(onPick) {
-  const cur = (FM_PROPS && fmSelPaths()[0] === FM_PROPS_PATH) ? FM_PROPS.gid : -1;
-  fmPickerPage('用户组', '/api/fs/groups', cur, (item) => {
-    fmDialogClose();
-    onPick(item.id);
-  }, 'media_rw');
-}
-
-function fmPickerPage(title, api, current, onPick, placeholder) {
-  fmDialog(title,
-    `<div class="mt-picker">` +
-    `<div class="mt-picker-search"><input type="text" id="mtPickerQ" placeholder="${fmHtml(placeholder)}" autocomplete="off"></div>` +
-    `<div class="mt-picker-list" id="mtPickerList"><div class="mt-dim" style="padding:12px;">加载中…</div></div>` +
-    `</div>` +
+  fmDialog('所有者与用户组',
+    `<div class="mt-field"><label class="mt-k">所有者</label>` +
+    `<select class="mt-select" id="og_uid"></select></div>` +
+    `<div class="mt-field"><label class="mt-k">用户组</label>` +
+    `<select class="mt-select" id="og_gid"></select></div>` +
+    `<label class="mt-chk"><input type="checkbox" id="og_files">同时应用到所有子文件</label>` +
+    `<label class="mt-chk"><input type="checkbox" id="og_dirs">同时应用到所有子文件夹</label>` +
     `<div class="mt-foot">` +
     `<button class="mt-link" onclick="fmDialogClose()">取消</button>` +
-    `<button class="mt-link" onclick="fmPickerConfirm()">确定</button>` +
+    `<button class="mt-link" onclick="fmOwnerGroupApply()">确定</button>` +
     `</div>`,
     null, '');
 
-  fmApi(api).then(list => {
-    FM_PICKER = { title, list: list || [], onPick, selected: current };
-    fmPickerRender('');
-    const q = document.getElementById('mtPickerQ');
-    if (q) q.addEventListener('input', () => fmPickerRender(q.value.trim()));
-  }).catch(e => {
-    const box = document.getElementById('mtPickerList');
-    if (box) box.textContent = '加载失败：' + e.message;
-  });
+  // 下拉内容来自后端两个列表；选中项按当前 uid/gid 定位
+  Promise.all([fmApi('/api/fs/users'), fmApi('/api/fs/groups')]).then(([users, groups]) => {
+    const fill = (id, list, cur, fallbackName) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const items = list || [];
+      // 当前值可能不在列表里（比如 uid 不在 passwd 里），补一条进去，别让选中项丢失
+      if (cur !== null && cur !== undefined && !items.some(it => it.id === cur)) {
+        items.unshift({ id: cur, name: fallbackName || String(cur), label: '' });
+      }
+      el.innerHTML = items.map(it =>
+        `<option value="${it.id}"${it.id === cur ? ' selected' : ''}>` +
+        `${fmHtml(it.name)} - ${it.id}</option>`).join('');
+    };
+    fill('og_uid', users, uid, uName);
+    fill('og_gid', groups, gid, gName);
+  }).catch(e => showToast('读取列表失败：' + e.message));
 }
 
-function fmPickerRender(filter) {
-  const box = document.getElementById('mtPickerList');
-  if (!box || !FM_PICKER) return;
-  const list = FM_PICKER.list || [];
-  const f = (filter || '').toLowerCase();
-  const rows = list.filter(it => {
-    if (!f) return true;
-    return String(it.name).toLowerCase().includes(f) ||
-      String(it.id).includes(f) ||
-      String(it.label || '').toLowerCase().includes(f);
-  });
-  if (!rows.length) {
-    box.innerHTML = `<div class="mt-dim" style="padding:12px;">没有匹配项</div>`;
-    return;
-  }
-  box.innerHTML = rows.map(it => {
-    const on = FM_PICKER.selected === it.id;
-    return `<div class="mt-picker-row${on ? ' on' : ''}" onclick="fmPickerSelect(${it.id})">` +
-      `<div class="mt-picker-icon">${fmHtml(String(it.name || '?').slice(0, 1).toUpperCase())}</div>` +
-      `<div class="mt-picker-text">` +
-      `<div class="mt-picker-name">${fmHtml(it.name)} <span class="mt-dim">(${it.id})</span></div>` +
-      (it.label ? `<div class="mt-picker-sub">${fmHtml(it.label)}</div>` : '') +
-      `</div>` +
-      `<div class="mt-picker-radio${on ? ' on' : ''}"></div>` +
-      `</div>`;
-  }).join('');
-}
-
-function fmPickerSelect(id) {
-  if (!FM_PICKER) return;
-  FM_PICKER.selected = id;
-  const q = document.getElementById('mtPickerQ');
-  fmPickerRender(q ? q.value.trim() : '');
-}
-
-function fmPickerConfirm() {
-  if (!FM_PICKER || FM_PICKER.selected < 0) { showToast('先选一个'); return; }
-  const item = (FM_PICKER.list || []).find(it => it.id === FM_PICKER.selected);
-  if (item && FM_PICKER.onPick) FM_PICKER.onPick(item);
-}
-
-function fmApplyChown(uid, gid, recursive) {
+function fmOwnerGroupApply() {
   const paths = fmSelPaths();
   if (!paths.length) return;
-  const body = { paths, recursive };
-  if (uid !== null && uid !== undefined) body.uid = uid;
-  if (gid !== null && gid !== undefined) body.gid = gid;
+  const uEl = document.getElementById('og_uid');
+  const gEl = document.getElementById('og_gid');
+  const body = {
+    paths,
+    recurse_files: !!(document.getElementById('og_files') || {}).checked,
+    recurse_dirs: !!(document.getElementById('og_dirs') || {}).checked,
+  };
+  if (uEl && uEl.value !== '') body.uid = Number(uEl.value);
+  if (gEl && gEl.value !== '') body.gid = Number(gEl.value);
   fmApi('/api/fs/chown', {
-    method: 'POST', headers: FM_JSON,
-    body: JSON.stringify(body),
+    method: 'POST', headers: FM_JSON, body: JSON.stringify(body),
   }).then(() => {
     showToast('已修改所有者');
+    fmDialogClose();
+    if (FM_PROPS_PATH) fmApi('/api/fs/props?path=' + fmEsc(FM_PROPS_PATH)).then(p => { FM_PROPS = p; }).catch(() => {});
     fmLoad(0); fmLoad(1);
   }).catch(e => showToast('失败：' + e.message));
 }
+
 
 function fmAllRoots() {
   return (FM.builtinRoots || []).map(r => ({ name: r.label, path: r.path, builtin: true }))

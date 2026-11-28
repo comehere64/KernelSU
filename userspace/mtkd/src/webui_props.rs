@@ -1175,8 +1175,53 @@ pub fn set_mtime(path: &str, mtime: i64) -> Result<()> {
     Ok(())
 }
 
+/// 递归改时间。
+///
+/// 「同时应用到所有子文件」「同时应用到所有子文件夹」是两个独立开关，
+/// 目标本身永远改；子项按类型分别处理。
+#[cfg(unix)]
+pub fn set_mtime_tree(
+    path: &str,
+    mtime: i64,
+    recurse_files: bool,
+    recurse_dirs: bool,
+) -> Result<()> {
+    set_mtime(path, mtime)?;
+    if !recurse_files && !recurse_dirs {
+        return Ok(());
+    }
+    let mut stack = vec![std::path::PathBuf::from(path)];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for item in entries.flatten() {
+            let child = item.path();
+            let is_dir = item.file_type().is_ok_and(|t| t.is_dir());
+            if (is_dir && recurse_dirs) || (!is_dir && recurse_files) {
+                // 单个子项失败不该让整批中断
+                let _ = set_mtime(&child.to_string_lossy(), mtime);
+            }
+            if is_dir {
+                stack.push(child);
+            }
+        }
+    }
+    Ok(())
+}
+
 #[cfg(not(unix))]
 pub fn set_mtime(_path: &str, _mtime: i64) -> Result<()> {
+    bail!("当前平台不支持修改时间")
+}
+
+#[cfg(not(unix))]
+pub fn set_mtime_tree(
+    _path: &str,
+    _mtime: i64,
+    _recurse_files: bool,
+    _recurse_dirs: bool,
+) -> Result<()> {
     bail!("当前平台不支持修改时间")
 }
 
