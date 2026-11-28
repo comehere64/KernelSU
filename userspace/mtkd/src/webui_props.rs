@@ -670,58 +670,204 @@ pub mod md5 {
         0xeb86_d391,
     ];
 
-    pub fn digest(data: &[u8]) -> [u8; 16] {
-        let mut state: [u32; 4] = [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476];
-        let mut msg = data.to_vec();
-        let bit_len = (data.len() as u64).wrapping_mul(8);
-        msg.push(0x80);
-        while msg.len() % 64 != 56 {
-            msg.push(0);
+    /// 处理一个 64 字节块。
+    fn compress(state: &mut [u32; 4], chunk: &[u8]) {
+        let mut words = [0u32; 16];
+        for (index, word) in words.iter_mut().enumerate() {
+            *word = u32::from_le_bytes([
+                chunk[index * 4],
+                chunk[index * 4 + 1],
+                chunk[index * 4 + 2],
+                chunk[index * 4 + 3],
+            ]);
         }
-        msg.extend_from_slice(&bit_len.to_le_bytes());
-
-        for chunk in msg.chunks(64) {
-            let mut words = [0u32; 16];
-            for (index, word) in words.iter_mut().enumerate() {
-                *word = u32::from_le_bytes([
-                    chunk[index * 4],
-                    chunk[index * 4 + 1],
-                    chunk[index * 4 + 2],
-                    chunk[index * 4 + 3],
-                ]);
-            }
-            let [mut reg_a, mut reg_b, mut reg_c, mut reg_d] = state;
-            for step in 0..64 {
-                let (mix, pick) = match step {
-                    0..=15 => ((reg_b & reg_c) | (!reg_b & reg_d), step),
-                    16..=31 => ((reg_d & reg_b) | (!reg_d & reg_c), (5 * step + 1) % 16),
-                    32..=47 => (reg_b ^ reg_c ^ reg_d, (3 * step + 5) % 16),
-                    _ => (reg_c ^ (reg_b | !reg_d), (7 * step) % 16),
-                };
-                let carried = reg_d;
-                reg_d = reg_c;
-                reg_c = reg_b;
-                reg_b = reg_b.wrapping_add(
-                    reg_a
-                        .wrapping_add(mix)
-                        .wrapping_add(K[step])
-                        .wrapping_add(words[pick])
-                        .rotate_left(S[step]),
-                );
-                reg_a = carried;
-            }
-            state[0] = state[0].wrapping_add(reg_a);
-            state[1] = state[1].wrapping_add(reg_b);
-            state[2] = state[2].wrapping_add(reg_c);
-            state[3] = state[3].wrapping_add(reg_d);
+        let [mut reg_a, mut reg_b, mut reg_c, mut reg_d] = *state;
+        for step in 0..64 {
+            let (mix, pick) = match step {
+                0..=15 => ((reg_b & reg_c) | (!reg_b & reg_d), step),
+                16..=31 => ((reg_d & reg_b) | (!reg_d & reg_c), (5 * step + 1) % 16),
+                32..=47 => (reg_b ^ reg_c ^ reg_d, (3 * step + 5) % 16),
+                _ => (reg_c ^ (reg_b | !reg_d), (7 * step) % 16),
+            };
+            let carried = reg_d;
+            reg_d = reg_c;
+            reg_c = reg_b;
+            reg_b = reg_b.wrapping_add(
+                reg_a
+                    .wrapping_add(mix)
+                    .wrapping_add(K[step])
+                    .wrapping_add(words[pick])
+                    .rotate_left(S[step]),
+            );
+            reg_a = carried;
         }
-
-        let mut out = [0u8; 16];
-        for (i, word) in state.iter().enumerate() {
-            out[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
-        }
-        out
+        state[0] = state[0].wrapping_add(reg_a);
+        state[1] = state[1].wrapping_add(reg_b);
+        state[2] = state[2].wrapping_add(reg_c);
+        state[3] = state[3].wrapping_add(reg_d);
     }
+
+    /// 分块喂数据的 MD5。
+    ///
+    /// 属性页要一次算四种哈希，必须单趟读盘；不能像原来那样把整个文件读进内存。
+    pub struct Md5 {
+        state: [u32; 4],
+        /// 不足 64 字节的尾巴
+        buf: Vec<u8>,
+        total: u64,
+    }
+
+    impl Md5 {
+        pub fn new() -> Self {
+            Self {
+                state: [0x6745_2301, 0xefcd_ab89, 0x98ba_dcfe, 0x1032_5476],
+                buf: Vec::with_capacity(64),
+                total: 0,
+            }
+        }
+
+        pub fn update(&mut self, mut data: &[u8]) {
+            self.total = self.total.wrapping_add(data.len() as u64);
+            if !self.buf.is_empty() {
+                let need = 64 - self.buf.len();
+                let take = need.min(data.len());
+                self.buf.extend_from_slice(&data[..take]);
+                data = &data[take..];
+                if self.buf.len() == 64 {
+                    let mut block = [0u8; 64];
+                    block.copy_from_slice(&self.buf);
+                    compress(&mut self.state, &block);
+                    self.buf.clear();
+                }
+            }
+            // 手写游标而不是 chunks_exact：clippy 的 pedantic 会对
+            // 固定块长建议 as_chunks（可不稳定），这里直接循环更省事。
+            let mut offset = 0;
+            while offset + 64 <= data.len() {
+                compress(&mut self.state, &data[offset..offset + 64]);
+                offset += 64;
+            }
+            if offset < data.len() {
+                self.buf.extend_from_slice(&data[offset..]);
+            }
+        }
+
+        pub fn finalize(mut self) -> [u8; 16] {
+            let bit_len = self.total.wrapping_mul(8);
+            let mut tail = std::mem::take(&mut self.buf);
+            tail.push(0x80);
+            while tail.len() % 64 != 56 {
+                tail.push(0);
+            }
+            tail.extend_from_slice(&bit_len.to_le_bytes());
+            for chunk in tail.chunks(64) {
+                compress(&mut self.state, chunk);
+            }
+
+            let mut out = [0u8; 16];
+            for (index, word) in self.state.iter().enumerate() {
+                out[index * 4..index * 4 + 4].copy_from_slice(&word.to_le_bytes());
+            }
+            out
+        }
+    }
+
+    pub fn digest(data: &[u8]) -> [u8; 16] {
+        let mut hasher = Md5::new();
+        hasher.update(data);
+        hasher.finalize()
+    }
+}
+
+/// CRC-32（IEEE 802.3，同 zlib / `cksum` / Android 的 `crc32`）。
+pub mod crc32 {
+    const POLY: u32 = 0xEDB8_8320;
+
+    pub struct Crc32 {
+        table: [u32; 256],
+        value: u32,
+    }
+
+    impl Crc32 {
+        pub fn new() -> Self {
+            let mut table = [0u32; 256];
+            for (index, slot) in table.iter_mut().enumerate() {
+                let mut crc = index as u32;
+                for _ in 0..8 {
+                    crc = if crc & 1 != 0 {
+                        (crc >> 1) ^ POLY
+                    } else {
+                        crc >> 1
+                    };
+                }
+                *slot = crc;
+            }
+            Self {
+                table,
+                value: 0xFFFF_FFFF,
+            }
+        }
+
+        pub fn update(&mut self, data: &[u8]) {
+            let mut crc = self.value;
+            for byte in data {
+                crc = self.table[((crc ^ u32::from(*byte)) & 0xff) as usize] ^ (crc >> 8);
+            }
+            self.value = crc;
+        }
+
+        pub const fn finalize(self) -> u32 {
+            self.value ^ 0xFFFF_FFFF
+        }
+    }
+}
+
+/// 一次读盘算完四种哈希。
+#[derive(Serialize, Default, Clone)]
+pub struct Checksums {
+    pub md5: String,
+    pub sha1: String,
+    pub sha256: String,
+    pub crc32: String,
+    pub size: u64,
+}
+
+/// 单趟读盘，同时算出 MD5 / SHA1 / SHA256 / CRC32。
+/// 不按平台裁剪：这里只用 std 文件 IO，结构上跟着 `hash_file` 走同一条读盘路径。
+pub fn checksums(path: &str) -> Result<Checksums> {
+    use sha1::Digest as _;
+    use sha2::Digest as _;
+    use std::io::Read;
+
+    let mut file = std::fs::File::open(path).with_context(|| format!("打开 {path} 失败"))?;
+    let mut buf = vec![0u8; 1 << 20];
+
+    let mut md5_hasher = md5::Md5::new();
+    let mut sha1_hasher = sha1::Sha1::new();
+    let mut sha256_hasher = sha2::Sha256::new();
+    let mut crc = crc32::Crc32::new();
+    let mut total = 0u64;
+
+    loop {
+        let read = file.read(&mut buf)?;
+        if read == 0 {
+            break;
+        }
+        let chunk = &buf[..read];
+        total += read as u64;
+        md5_hasher.update(chunk);
+        sha1_hasher.update(chunk);
+        sha256_hasher.update(chunk);
+        crc.update(chunk);
+    }
+
+    Ok(Checksums {
+        md5: hex(&md5_hasher.finalize()),
+        sha1: hex(&sha1_hasher.finalize()),
+        sha256: hex(&sha256_hasher.finalize()),
+        crc32: format!("{:08x}", crc.finalize()),
+        size: total,
+    })
 }
 
 #[cfg(target_os = "android")]
@@ -1063,6 +1209,75 @@ mod tests {
         assert_eq!(human_size(1024), "1.00 KB");
         assert_eq!(human_size(1536), "1.50 KB");
         assert_eq!(human_size(1024 * 1024), "1.00 MB");
+    }
+
+    #[test]
+    fn md5_streaming_matches_one_shot() {
+        // 分块喂必须和一次性结果一致，否则属性页四哈希会算错
+        let data: Vec<u8> = (0..=255u8).cycle().take(1000).collect();
+        for split in [1usize, 63, 64, 65, 137, 1000] {
+            let mut hasher = md5::Md5::new();
+            for chunk in data.chunks(split) {
+                hasher.update(chunk);
+            }
+            assert_eq!(
+                hex(&hasher.finalize()),
+                hex(&md5::digest(&data)),
+                "split={split}"
+            );
+        }
+    }
+
+    #[test]
+    fn checksums_reads_the_whole_file() {
+        use std::io::Write as _;
+
+        let dir = std::env::temp_dir();
+        let small = dir.join(format!("ksu_sums_small_{}", std::process::id()));
+        std::fs::write(&small, b"abc").expect("write");
+        let sums = checksums(small.to_str().expect("utf8")).expect("checksums");
+        assert_eq!(sums.size, 3);
+        assert_eq!(sums.md5, "900150983cd24fb0d6963f7d28e17f72");
+        assert_eq!(sums.sha1, "a9993e364706816aba3e25717850c26c9cd0d89d");
+        assert_eq!(
+            sums.sha256,
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(sums.crc32, "352441c2");
+        let _ = std::fs::remove_file(&small);
+
+        // 跨 1 MiB 缓冲边界：分块结果必须和一次性结果一致
+        let big = dir.join(format!("ksu_sums_big_{}", std::process::id()));
+        let data: Vec<u8> = (0..=(1 << 20) + 37).map(|i| (i % 251) as u8).collect();
+        let mut handle = std::fs::File::create(&big).expect("create");
+        handle.write_all(&data).expect("write");
+        drop(handle);
+        let sums = checksums(big.to_str().expect("utf8")).expect("checksums");
+        assert_eq!(sums.size, data.len() as u64);
+        assert_eq!(sums.md5, hex(&md5::digest(&data)));
+        {
+            use sha1::Digest as _;
+            assert_eq!(sums.sha1, hex(&sha1::Sha1::digest(&data)));
+        }
+        {
+            use sha2::Digest as _;
+            assert_eq!(sums.sha256, hex(&sha2::Sha256::digest(&data)));
+        }
+        let _ = std::fs::remove_file(&big);
+    }
+
+    #[test]
+    fn crc32_matches_ieee_vector() {
+        assert_eq!(crc32::Crc32::new().finalize(), 0x0000_0000);
+        let mut crc = crc32::Crc32::new();
+        crc.update(b"123456789");
+        assert_eq!(crc.finalize(), 0xcbf4_3926);
+        // 分块喂同一份数据，结果必须相同
+        let mut split = crc32::Crc32::new();
+        for chunk in b"123456789".chunks(4) {
+            split.update(chunk);
+        }
+        assert_eq!(split.finalize(), 0xcbf4_3926);
     }
 
     #[test]

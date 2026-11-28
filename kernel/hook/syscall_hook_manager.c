@@ -17,6 +17,7 @@
 #include "hook/syscall_hook_manager.h"
 #include "hook/tp_marker.h"
 #include "feature/sucompat.h"
+#include "feature/proc_hide.h"
 #include "hook/setuid_hook.h"
 #include "hook/syscall_hook.h"
 #include "hook/syscall_event_bridge.h"
@@ -160,6 +161,9 @@ void __init ksu_syscall_hook_manager_init(void)
     ksu_register_syscall_hook(__NR_execveat, ksu_hook_execveat);
     ksu_register_syscall_hook(__NR_newfstatat, ksu_hook_newfstatat);
     ksu_register_syscall_hook(__NR_faccessat, ksu_hook_faccessat);
+    /* /proc 目录项过滤：让伪装名启动的进程不出现在 ps / 进程管理器里。
+       走全局 syscall 表 patch —— dispatcher 只作用于被标记的进程，ps 是 shell 在跑。 */
+    ksu_proc_hide_init();
 
 #ifdef CONFIG_HAVE_SYSCALL_TRACEPOINTS
     ret = register_trace_prio_sys_enter(ksu_sys_enter_handler, NULL, INT_MIN);
@@ -201,6 +205,7 @@ void __exit ksu_syscall_hook_manager_exit(void)
     ksu_unregister_syscall_hook(__NR_newfstatat);
     ksu_unregister_syscall_hook(__NR_faccessat);
 
+    ksu_proc_hide_exit();
     ksu_syscall_hook_exit();
 
     ksu_sucompat_exit();

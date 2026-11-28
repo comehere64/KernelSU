@@ -550,6 +550,17 @@ body.modal-open { overflow: hidden; }
     .mt-picker-radio { flex: 0 0 18px; width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--border); }
     .mt-picker-radio.on { border-color: var(--accent); background: radial-gradient(circle at center, var(--accent) 0 45%, transparent 46%); }
 
+    /* 校验页（MT 版式） */
+    .ck-file { font-size: 15px; color: var(--text-primary); padding: 2px 0 10px; word-break: break-all; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+    .ck-row { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; }
+    .ck-label { font-size: 12px; color: var(--text-tertiary); }
+    .ck-line { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+    .ck-val { flex: 1 1 auto; min-width: 0; border: 0; background: transparent; color: var(--text-primary); font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; padding: 2px 0; text-overflow: ellipsis; }
+    .ck-val:focus { outline: none; }
+    .ck-val.ck-ok { color: var(--accent); font-weight: 600; }
+    .ck-copy { flex: 0 0 auto; border: 0; border-radius: 6px; background: var(--bg-tertiary); color: var(--text-primary); font-size: 13px; padding: 5px 12px; cursor: pointer; }
+    .ck-copy:active { opacity: .6; }
+
     .fm-share-list { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
     .fm-share-list .fm-btn { width: 100%; }
     @media (max-width: 480px) {
@@ -3632,23 +3643,102 @@ function fmMoreMenu() {
 function fmChecksum() {
   const p = FM_PROPS;
   if (!p || p.is_dir) {
-    fmDialog('校验', `<div class="mt-attr"><div class="mt-row"><div class="mt-k">提示</div><div class="mt-v">文件夹不做校验</div></div></div>`, null, '关闭');
+    fmDialog('校验',
+      `<div class="mt-attr"><div class="mt-row"><div class="mt-k">提示</div>` +
+      `<div class="mt-v">文件夹不做校验</div></div></div>`, null, '关闭');
     return;
   }
+  FM_SUMS = null;
   fmDialog('校验',
-    `<div class="mt-hash" id="fmHashBox">` +
-    ['md5', 'sha1', 'sha256'].map(a => `<button class="mt-link" onclick="fmHash('${a}')">${a.toUpperCase()}</button>`).join('') +
-    `</div><div class="mt-hash-out" id="fmHashOut"></div>`,
-    null, '关闭');
+    `<div class="ck-file">${fmHtml(p.name)}</div>` +
+    ['md5', 'sha1', 'sha256', 'crc32'].map(algo =>
+      `<div class="ck-row">` +
+      `<div class="ck-label">${algo === 'crc32' ? 'CRC32' : algo.toUpperCase()}</div>` +
+      `<div class="ck-line"><input class="ck-val" id="ck_${algo}" readonly value="计算中…">` +
+      `<button class="ck-copy" onclick="fmCopySum('${algo}')">复制</button></div>` +
+      `</div>`).join('') +
+    `<div class="ck-row"><div class="ck-label">粘贴并校验</div>` +
+    `<div class="ck-line"><input class="ck-val" id="ck_verify" placeholder="" oninput="fmVerifySum()">` +
+    `<button class="ck-copy" onclick="fmPasteVerify()">粘贴</button></div></div>` +
+    `<div class="mt-foot" style="justify-content:space-between;align-items:center;">` +
+    `<label class="mt-chk"><input type="checkbox" id="ck_upper" onchange="fmRenderSums()">大写字母</label>` +
+    `<button class="mt-link" onclick="fmDialogClose()">关闭</button>` +
+    `</div>`,
+    null, '');
+
+  fmApi('/api/fs/checksums?path=' + fmEsc(FM_PROPS_PATH)).then(sums => {
+    FM_SUMS = sums;
+    fmRenderSums();
+  }).catch(e => {
+    ['md5', 'sha1', 'sha256', 'crc32'].forEach(a => {
+      const el = document.getElementById('ck_' + a);
+      if (el) el.value = '失败：' + e.message;
+    });
+  });
 }
 
-function fmHash(algo) {
-  const out = document.getElementById('fmHashOut');
-  if (!out || !FM_PROPS_PATH) return;
-  out.textContent = '正在计算 ' + algo.toUpperCase() + '…';
-  fmApi('/api/fs/hash?algo=' + algo + '&path=' + fmEsc(FM_PROPS_PATH))
-    .then(r => { out.innerHTML = `<div class="mt-kv-mono">${fmHtml(r.digest)}</div>`; })
-    .catch(e => { out.textContent = '计算失败：' + e.message; });
+let FM_SUMS = null;
+
+function fmRenderSums() {
+  if (!FM_SUMS) return;
+  const upper = document.getElementById('ck_upper');
+  const up = !!(upper && upper.checked);
+  ['md5', 'sha1', 'sha256', 'crc32'].forEach(algo => {
+    const el = document.getElementById('ck_' + algo);
+    if (!el) return;
+    const raw = String(FM_SUMS[algo] || '');
+    // 大小写切换会重建显示，比对结果按原始值重算一遍
+    el.classList.remove('ck-ok');
+    el.value = up ? raw.toUpperCase() : raw;
+  });
+  fmVerifySum();
+}
+
+function fmCopySum(algo) {
+  const el = document.getElementById('ck_' + algo);
+  if (!el || !el.value) return;
+  fmCopy(el.value, algo.toUpperCase() + ' 已复制');
+}
+
+function fmPasteVerify() {
+  const input = document.getElementById('ck_verify');
+  if (!input) return;
+  const fill = text => {
+    input.value = text.trim();
+    fmVerifySum();
+  };
+  if (navigator.clipboard && navigator.clipboard.readText) {
+    navigator.clipboard.readText().then(fill).catch(() => {
+      input.focus();
+      showToast('系统不允许读剪贴板，请手动粘贴');
+    });
+  } else {
+    input.focus();
+  }
+}
+
+// 粘贴进来的值跟哪一个对得上，就提示是哪种校验
+function fmVerifySum() {
+  const input = document.getElementById('ck_verify');
+  if (!input || !FM_SUMS) return;
+  const want = input.value.trim().toLowerCase();
+  if (!want) {
+    ['md5', 'sha1', 'sha256', 'crc32'].forEach(a => {
+      const el = document.getElementById('ck_' + a);
+      if (el) el.classList.remove('ck-ok');
+    });
+    return;
+  }
+  const hit = ['md5', 'sha1', 'sha256', 'crc32']
+    .find(algo => String(FM_SUMS[algo] || '').toLowerCase() === want);
+  if (hit) {
+    document.getElementById('ck_' + hit).classList.add('ck-ok');
+    showToast('一致：' + (hit === 'crc32' ? 'CRC32' : hit.toUpperCase()));
+  } else {
+    ['md5', 'sha1', 'sha256', 'crc32'].forEach(a =>
+      document.getElementById('ck_' + a).classList.remove('ck-ok'));
+    showToast('不一致');
+  }
 }
 
 function fmMtimeDialog() {
@@ -3790,16 +3880,18 @@ function fmOwnerGroupBoth(recursive) {
 function fmOwnerPicker(onPick) {
   const cur = (FM_PROPS && fmSelPaths()[0] === FM_PROPS_PATH) ? FM_PROPS.uid : -1;
   fmPickerPage('所有者', '/api/fs/users', cur, (item) => {
-    onPick(item.id);
+    // 必须先关：fmOwnerGroupBoth 会在回调里接着打开用户组选择框，
+    // 反过来的话刚打开就被 fmDialogClose() 关掉了。
     fmDialogClose();
+    onPick(item.id);
   }, 'u0_a333');
 }
 
 function fmGroupPicker(onPick) {
   const cur = (FM_PROPS && fmSelPaths()[0] === FM_PROPS_PATH) ? FM_PROPS.gid : -1;
   fmPickerPage('用户组', '/api/fs/groups', cur, (item) => {
-    onPick(item.id);
     fmDialogClose();
+    onPick(item.id);
   }, 'media_rw');
 }
 

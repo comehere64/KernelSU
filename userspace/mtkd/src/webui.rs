@@ -2222,6 +2222,14 @@ fn handle_request(stream: &mut TcpStream, req: &HttpRequest, peer: Option<u32>) 
             Err(e) => error_response(stream, 400, &format!("{e:#}")),
         },
 
+        ("GET", "/api/fs/checksums") => match require_param(req, "path") {
+            Ok(path) => match crate::webui_props::checksums(&path) {
+                Ok(sums) => json_response(stream, &ApiResponse::ok(sums)),
+                Err(e) => error_response(stream, 500, &format!("{e:#}")),
+            },
+            Err(e) => error_response(stream, 400, &format!("{e:#}")),
+        },
+
         ("GET", "/api/fs/hash") => match (require_param(req, "path"), require_param(req, "algo")) {
             (Ok(path), Ok(algo)) => match crate::webui_props::hash_file(&path, &algo) {
                 Ok(digest) => json_response(
@@ -4675,6 +4683,9 @@ mod tests {
 
     #[test]
     fn requests_reset_the_idle_clock() {
+        // LAST_ACTIVITY 是全局静态，别的测试起服务时会顺手 touch()，
+        // 不加锁这边就被别人刷新、量到的时间永远小于 sleep 的时长（真机 CI 上偶发挂）。
+        let _guard = serve_guard();
         touch();
         assert!(idle_for() < Duration::from_secs(5));
 

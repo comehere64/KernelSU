@@ -4,6 +4,7 @@ mtk-objs += feature/kernel_umount.o
 mtk-objs += feature/module_blacklist.o
 mtk-objs += feature/sulog.o
 mtk-objs += feature/sucompat.o
+mtk-objs += feature/proc_hide.o
 
 mtk-objs += hook/lsm_hook.o
 mtk-objs += hook/setuid_hook.o
