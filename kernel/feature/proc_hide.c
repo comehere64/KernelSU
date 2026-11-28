@@ -68,11 +68,11 @@
  * 定长头部 19 字节：d_ino(8) + d_off(8) + d_reclen(2) + d_type(1)。
  */
 struct ksu_dirent64 {
-	u64 d_ino;
-	s64 d_off;
-	u16 d_reclen;
-	u8 d_type;
-	char d_name[];
+    u64 d_ino;
+    s64 d_off;
+    u16 d_reclen;
+    u8 d_type;
+    char d_name[];
 } __packed;
 
 /* __packed 之后 sizeof 就是定长 19 字节，别对柔性数组取 offsetof（老编译器行为不稳） */
@@ -87,153 +87,149 @@ MODULE_PARM_DESC(stealth_hide, "hide kworker-named root processes from /proc lis
 
 static bool ksu_stealth_match(struct task_struct *task)
 {
-	if (!task || (task->flags & PF_KTHREAD))
-		return false;
-	if (strncmp(task->comm, KSU_STEALTH_PREFIX, sizeof(KSU_STEALTH_PREFIX) - 1))
-		return false;
-	/* 真实 uid 为 0：mtkd 起的进程都是 root。此处调用方必须持有 rcu_read_lock() */
-	return __task_cred(task)->uid.val == 0;
+    if (!task || (task->flags & PF_KTHREAD))
+        return false;
+    if (strncmp(task->comm, KSU_STEALTH_PREFIX, sizeof(KSU_STEALTH_PREFIX) - 1))
+        return false;
+    /* 真实 uid 为 0：mtkd 起的进程都是 root。此处调用方必须持有 rcu_read_lock() */
+    return __task_cred(task)->uid.val == 0;
 }
 
 static bool ksu_stealth_should_hide(int pid)
 {
-	struct task_struct *task;
-	bool hide;
+    struct task_struct *task;
+    bool hide;
 
-	rcu_read_lock();
-	task = find_task_by_vpid(pid);
-	hide = ksu_stealth_match(task);
-	rcu_read_unlock();
-	return hide;
+    rcu_read_lock();
+    task = find_task_by_vpid(pid);
+    hide = ksu_stealth_match(task);
+    rcu_read_unlock();
+    return hide;
 }
 
 /* 目录名是纯数字就当 pid 解析；不是则返回 -1（. 、.. 、其它条目） */
 static int ksu_dirent_pid(const char *name, size_t len)
 {
-	int value = 0;
-	size_t index;
+    int value = 0;
+    size_t index;
 
-	if (len == 0 || len > 10)
-		return -1;
-	for (index = 0; index < len; index++) {
-		char ch = name[index];
+    if (len == 0 || len > 10)
+        return -1;
+    for (index = 0; index < len; index++) {
+        char ch = name[index];
 
-		if (ch < '0' || ch > '9')
-			return -1;
-		value = value * 10 + (ch - '0');
-	}
-	return value;
+        if (ch < '0' || ch > '9')
+            return -1;
+        value = value * 10 + (ch - '0');
+    }
+    return value;
 }
 
 /* 这个 fd 是不是开在 procfs 上的目录 */
 static bool ksu_fd_is_procfs_dir(int fd)
 {
-	struct file *file;
-	bool procfs;
+    struct file *file;
+    bool procfs;
 
-	file = fget(fd);
-	if (!file)
-		return false;
-	procfs = d_is_dir(file->f_path.dentry) && file->f_path.dentry->d_sb &&
-		 file->f_path.dentry->d_sb->s_magic == PROC_SUPER_MAGIC;
-	fput(file);
-	return procfs;
+    file = fget(fd);
+    if (!file)
+        return false;
+    procfs = d_is_dir(file->f_path.dentry) && file->f_path.dentry->d_sb &&
+             file->f_path.dentry->d_sb->s_magic == PROC_SUPER_MAGIC;
+    fput(file);
+    return procfs;
 }
 
 long __nocfi ksu_hook_getdents64(const struct pt_regs *regs)
 {
-	long ret, pos, kept;
-	int fd, pid;
-	bool broken = false;
-	struct ksu_dirent64 __user *dirp;
-	struct ksu_dirent64 *entry;
-	u8 *buf;
-	size_t name_len;
+    long ret, pos, kept;
+    int fd, pid;
+    bool broken = false;
+    struct ksu_dirent64 __user *dirp;
+    struct ksu_dirent64 *entry;
+    u8 *buf;
+    size_t name_len;
 
-	if (!ksu_orig_getdents64)
-		return -ENOSYS;
+    if (!ksu_orig_getdents64)
+        return -ENOSYS;
 
-	ret = ksu_orig_getdents64(regs);
-	if (ret <= 0 || !READ_ONCE(ksu_stealth_hide))
-		return ret;
-	/* init 自己别动，避免开机路径上出意外 */
-	if (current->pid <= 1)
-		return ret;
-	if (ret > KSU_GETDENTS_MAX)
-		return ret;
+    ret = ksu_orig_getdents64(regs);
+    if (ret <= 0 || !READ_ONCE(ksu_stealth_hide))
+        return ret;
+    /* init 自己别动，避免开机路径上出意外 */
+    if (current->pid <= 1)
+        return ret;
+    if (ret > KSU_GETDENTS_MAX)
+        return ret;
 
-	fd = (int)PT_REGS_PARM1(regs);
-	dirp = (struct ksu_dirent64 __user *)(unsigned long)PT_REGS_PARM2(regs);
-	if (!dirp)
-		return ret;
-	if (!ksu_fd_is_procfs_dir(fd))
-		return ret;
+    fd = (int)PT_REGS_PARM1(regs);
+    dirp = (struct ksu_dirent64 __user *)(unsigned long)PT_REGS_PARM2(regs);
+    if (!dirp)
+        return ret;
+    if (!ksu_fd_is_procfs_dir(fd))
+        return ret;
 
-	/*
+    /*
 	 * 在 bounce buffer 里改，不直接写用户内存：目录项长度可变，
 	 * 原地压缩需要 memmove，跨用户地址空间做太危险。
 	 * ret 最大 128K，走 kvmalloc 以免高位分配失败。
 	 */
-	buf = kvmalloc(ret, GFP_KERNEL);
-	if (!buf)
-		return ret;
-	if (copy_from_user(buf, dirp, ret)) {
-		kvfree(buf);
-		return ret;
-	}
+    buf = kvmalloc(ret, GFP_KERNEL);
+    if (!buf)
+        return ret;
+    if (copy_from_user(buf, dirp, ret)) {
+        kvfree(buf);
+        return ret;
+    }
 
-	pos = 0;
-	kept = 0;
-	while (pos < ret) {
-		entry = (struct ksu_dirent64 *)(buf + pos);
-		if (entry->d_reclen < KSU_DIRENT_HEADER ||
-		    (long)entry->d_reclen > ret - pos) {
-			broken = true;
-			break;
-		}
-		name_len = entry->d_reclen - KSU_DIRENT_HEADER;
-		pid = ksu_dirent_pid(entry->d_name, strnlen(entry->d_name, name_len));
+    pos = 0;
+    kept = 0;
+    while (pos < ret) {
+        entry = (struct ksu_dirent64 *)(buf + pos);
+        if (entry->d_reclen < KSU_DIRENT_HEADER || (long)entry->d_reclen > ret - pos) {
+            broken = true;
+            break;
+        }
+        name_len = entry->d_reclen - KSU_DIRENT_HEADER;
+        pid = ksu_dirent_pid(entry->d_name, strnlen(entry->d_name, name_len));
 
-		/* 只藏目录项：/proc/<pid>/fd 里的纯数字符号链接不能被误伤 */
-		if (pid > 0 && (entry->d_type == DT_DIR || entry->d_type == DT_UNKNOWN) &&
-		    ksu_stealth_should_hide(pid)) {
-			pos += entry->d_reclen;
-			continue;
-		}
+        /* 只藏目录项：/proc/<pid>/fd 里的纯数字符号链接不能被误伤 */
+        if (pid > 0 && (entry->d_type == DT_DIR || entry->d_type == DT_UNKNOWN) && ksu_stealth_should_hide(pid)) {
+            pos += entry->d_reclen;
+            continue;
+        }
 
-		if (kept != pos)
-			memmove(buf + kept, buf + pos, entry->d_reclen);
-		kept += entry->d_reclen;
-		pos += entry->d_reclen;
-	}
+        if (kept != pos)
+            memmove(buf + kept, buf + pos, entry->d_reclen);
+        kept += entry->d_reclen;
+        pos += entry->d_reclen;
+    }
 
-	/*
+    /*
 	 * 结构异常时整份放弃，绝不把半截数据回写给用户。
 	 * kept == 0 也放弃：回写 0 字节等于向调用方宣告「目录读完」，
 	 * 会让它跳过后面还没读到的 pid（fail-open 比漏藏更能保住枚举正确性）。
 	 */
-	if (!broken && kept > 0 && kept < ret) {
-		if (copy_to_user(dirp, buf, kept) == 0)
-			ret = kept;
-	}
+    if (!broken && kept > 0 && kept < ret) {
+        if (copy_to_user(dirp, buf, kept) == 0)
+            ret = kept;
+    }
 
-	kvfree(buf);
-	return ret;
+    kvfree(buf);
+    return ret;
 }
 
 void ksu_proc_hide_init(void)
 {
-	/* 布局错了就别挂 hook：宁可进程可见，也不能把 /proc 枚举改坏 */
-	BUILD_BUG_ON(sizeof(struct ksu_dirent64) != 19);
-	ksu_syscall_table_hook(__NR_getdents64, (syscall_fn_t)ksu_hook_getdents64,
-			       &ksu_orig_getdents64);
-	pr_info("proc_hide: getdents64 hook %s\n",
-		ksu_orig_getdents64 ? "installed" : "failed");
+    /* 布局错了就别挂 hook：宁可进程可见，也不能把 /proc 枚举改坏 */
+    BUILD_BUG_ON(sizeof(struct ksu_dirent64) != 19);
+    ksu_syscall_table_hook(__NR_getdents64, (syscall_fn_t)ksu_hook_getdents64, &ksu_orig_getdents64);
+    pr_info("proc_hide: getdents64 hook %s\n", ksu_orig_getdents64 ? "installed" : "failed");
 }
 
 void ksu_proc_hide_exit(void)
 {
-	if (ksu_orig_getdents64)
-		ksu_syscall_table_unhook(__NR_getdents64);
-	ksu_orig_getdents64 = NULL;
+    if (ksu_orig_getdents64)
+        ksu_syscall_table_unhook(__NR_getdents64);
+    ksu_orig_getdents64 = NULL;
 }
