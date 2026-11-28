@@ -26,6 +26,7 @@
 #include <linux/mount.h>
 #include <linux/magic.h>
 #include <linux/slab.h>
+#include <linux/mm.h>
 #include <linux/stddef.h>
 #include <linux/uaccess.h>
 #include <linux/pid.h>
@@ -186,7 +187,7 @@ long __nocfi ksu_hook_getdents64(const struct pt_regs *regs)
     kept = 0;
     while (pos < ret) {
         entry = (struct ksu_dirent64 *)(buf + pos);
-        if (entry->d_reclen < KSU_DIRENT_HEADER || (long)entry->d_reclen > ret - pos) {
+        if ((size_t)entry->d_reclen < KSU_DIRENT_HEADER || (long)entry->d_reclen > ret - pos) {
             broken = true;
             break;
         }
