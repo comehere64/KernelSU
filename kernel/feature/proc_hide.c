@@ -66,6 +66,13 @@
 #define KSU_GETDENTS_MAX (128 * 1024)
 
 /*
+ * 伪装的 cmdline。
+ * 内核把 argv 拷进 mm 的 arg 区之后进程自己改不了，/proc/<pid>/cmdline 只能
+ * 在读取这一层给假内容，否则 `ps -ef` 的 COMMAND 列会把整条脚本路径打出来。
+ */
+#define KSU_FAKE_CMDLINE "kworker"
+
+/*
  * 自带一份 dirent64 布局，不依赖内核头里的 struct linux_dirent64：
  * 该结构在部分内核版本里被搬动过，而 getdents64 的线上布局从来没变过。
  * 定长头部 19 字节：d_ino(8) + d_off(8) + d_reclen(2) + d_type(1)。

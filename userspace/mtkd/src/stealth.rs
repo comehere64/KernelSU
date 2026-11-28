@@ -36,10 +36,8 @@ pub fn stealth_shell() -> (PathBuf, String) {
     // 老版本装的是软链（sh -> kworker）。升级后如果只判断「不存在才建」，
     // 那条软链会一直留着，/proc/<pid>/exe 仍然指 /system/bin/sh，等于白改。
     // 所以除了「不存在」，还要把「存在但是软链」也重建成真副本。
-    let needs_rebuild = match std::fs::symlink_metadata(&link) {
-        Err(_) => true,
-        Ok(meta) => meta.file_type().is_symlink(),
-    };
+    let needs_rebuild =
+        std::fs::symlink_metadata(&link).map_or(true, |meta| meta.file_type().is_symlink());
 
     if needs_rebuild {
         let _ = std::fs::create_dir_all(crate::defs::BINARY_DIR);
