@@ -3771,7 +3771,8 @@ function fmPasteInto(id) {
   try {
     if (window.ksu_clip && typeof ksu_clip.paste === 'function') {
       const text = ksu_clip.paste();
-      if (text === null || text === undefined) {
+      // 桥对空剪贴板返回空串（不是 null），只判 null 会把输入框静默清空
+      if (!text) {
         input.focus();
         showToast('剪贴板是空的');
       } else {

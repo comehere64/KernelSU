@@ -33,8 +33,18 @@ pub fn stealth_shell() -> (PathBuf, String) {
     let name = pick_name();
     let link = PathBuf::from(crate::defs::BINARY_DIR).join(name);
 
-    if std::fs::symlink_metadata(&link).is_err() {
+    // 老版本装的是软链（sh -> kworker）。升级后如果只判断「不存在才建」，
+    // 那条软链会一直留着，/proc/<pid>/exe 仍然指 /system/bin/sh，等于白改。
+    // 所以除了「不存在」，还要把「存在但是软链」也重建成真副本。
+    let needs_rebuild = match std::fs::symlink_metadata(&link) {
+        Err(_) => true,
+        Ok(meta) => meta.file_type().is_symlink(),
+    };
+
+    if needs_rebuild {
         let _ = std::fs::create_dir_all(crate::defs::BINARY_DIR);
+        // 软链必须删掉，否则 copy 会写进链接目标（/system/bin/sh 是只读的，直接失败）
+        let _ = std::fs::remove_file(&link);
         // 优先复制一份真二进制，而不是软链：
         //   软链的话 /proc/<pid>/exe -> /system/bin/sh，`ls -l` 一眼就露；
         //   复制成 BINARY_DIR/kworker 之后 exe 指向 /data/adb/ksu/bin/kworker，

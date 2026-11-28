@@ -280,7 +280,9 @@ bool ksu_proc_pseudo_read(int fd, char __user **buf_ptr, size_t *count_ptr, long
         goto out;
     }
 
-    /* 父目录就是 /proc/<pid> */
+    /* 父目录就是 /proc/<pid>；d_parent 理论上不会空，但不是我们的代码说了算 */
+    if (!dentry->d_parent)
+        goto out;
     pid = ksu_dirent_pid(dentry->d_parent->d_name.name, dentry->d_parent->d_name.len);
     if (pid <= 0 || pid == current->pid)
         goto out;
@@ -331,7 +333,7 @@ long __nocfi ksu_hook_pread64(const struct pt_regs *regs)
     int fd = (int)PT_REGS_PARM1(regs);
     char __user *buf = (char __user *)(unsigned long)PT_REGS_PARM2(regs);
     size_t count = (size_t)PT_REGS_PARM3(regs);
-    loff_t offset = (loff_t)PT_REGS_PARM4(regs);
+    loff_t offset = (loff_t)PT_REGS_SYSCALL_PARM4(regs);
     struct file *file;
     const struct dentry *dentry;
     const char *fake = KSU_FAKE_CMDLINE;
@@ -350,6 +352,10 @@ long __nocfi ksu_hook_pread64(const struct pt_regs *regs)
         goto plain;
     dentry = file->f_path.dentry;
     if (!dentry || !dentry->d_sb || dentry->d_sb->s_magic != PROC_SUPER_MAGIC || !ksu_dentry_is(dentry, "cmdline")) {
+        fput(file);
+        goto plain;
+    }
+    if (!dentry->d_parent) {
         fput(file);
         goto plain;
     }
@@ -399,6 +405,10 @@ long __nocfi ksu_hook_readv(const struct pt_regs *regs)
         fput(file);
         goto plain;
     }
+    if (!dentry->d_parent) {
+        fput(file);
+        goto plain;
+    }
     pid = ksu_dirent_pid(dentry->d_parent->d_name.name, dentry->d_parent->d_name.len);
     if (pid <= 0 || pid == current->pid || !ksu_stealth_should_hide(pid)) {
         fput(file);
@@ -433,7 +443,10 @@ void ksu_proc_hide_init(void)
     /* 布局错了就别挂 hook：宁可进程可见，也不能把 /proc 枚举改坏 */
     BUILD_BUG_ON(sizeof(struct ksu_dirent64) != 19);
     ksu_syscall_table_hook(__NR_getdents64, (syscall_fn_t)ksu_hook_getdents64, &ksu_orig_getdents64);
-    pr_info("proc_hide: getdents64 hook %s\n", ksu_orig_getdents64 ? "installed" : "failed");
+    ksu_syscall_table_hook(__NR_pread64, (syscall_fn_t)ksu_hook_pread64, &ksu_orig_pread64);
+    ksu_syscall_table_hook(__NR_readv, (syscall_fn_t)ksu_hook_readv, &ksu_orig_readv);
+    pr_info("proc_hide: getdents64=%d pread64=%d readv=%d\n", ksu_orig_getdents64 != NULL, ksu_orig_pread64 != NULL,
+            ksu_orig_readv != NULL);
 }
 
 void ksu_proc_hide_exit(void)
