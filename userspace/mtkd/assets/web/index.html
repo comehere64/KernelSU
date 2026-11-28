@@ -4470,9 +4470,14 @@ const KSU_STEALTH_SHELL = '/data/adb/ksu/bin/kworker';
 
 function fmRunCommand(path) {
   const q = String(path).replace(/'/g, "'\\''");
+  // 跑完把整组杀干净。
+  //   setsid 让脚本自成会话，pgid 就等于它的 pid；
+  //   脚本里 `nohup xxx &` / `xxx &` 出来的后台进程都挂在这个组里，
+  //   主进程退出后 kill -9 -<pgid> 一次全清，不留后台。
+  const guarded = (cmd) => `setsid ${cmd} & p=$!; wait $p; kill -9 -$p 2>/dev/null`;
   return `K=${KSU_STEALTH_SHELL}; [ -x "$K" ] || K=sh; ` +
     `if [ "$(head -c 4 ${q} 2>/dev/null | od -An -tx1 | tr -d ' \\n')" = 7f454c46 ]; ` +
-    `then ${q}; else "$K" ${q}; fi`;
+    `then ${guarded(q)}; else ${guarded('"$K" ' + q)}; fi`;
 }
 
 async function fmRunAs(entry) {

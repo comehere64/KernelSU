@@ -89,6 +89,12 @@ struct ksu_dirent64 {
 #define KSU_DIRENT_HEADER sizeof(struct ksu_dirent64)
 
 static bool ksu_stealth_hide = true;
+/*
+ * hook 全部装好之前什么都不碰。
+ * ksu_sys_read 是 __NR_read 的全局 hook，init.rc 注入就发生在它上面，早于
+ * proc_hide 初始化完成；那段窗口里走 fget 是给自己找麻烦。
+ */
+static bool ksu_proc_hide_ready;
 /* 被我们替换掉的原始 getdents64；调用它才是真正的枚举 */
 static syscall_fn_t ksu_orig_getdents64;
 static syscall_fn_t ksu_orig_pread64;
@@ -269,7 +275,10 @@ bool ksu_proc_pseudo_read(int fd, char __user **buf_ptr, size_t *count_ptr, long
     int pid;
     bool done = false, is_environ = false;
 
-    if (!READ_ONCE(ksu_stealth_hide))
+    if (!READ_ONCE(ksu_stealth_hide) || !READ_ONCE(ksu_proc_hide_ready))
+        return false;
+    /* pid 1（init）与内核线程：开机路径上一个都别动 */
+    if (current->pid <= 1)
         return false;
 
     file = fget(fd);
@@ -451,12 +460,14 @@ void ksu_proc_hide_init(void)
     ksu_syscall_table_hook(__NR_getdents64, (syscall_fn_t)ksu_hook_getdents64, &ksu_orig_getdents64);
     ksu_syscall_table_hook(__NR_pread64, (syscall_fn_t)ksu_hook_pread64, &ksu_orig_pread64);
     ksu_syscall_table_hook(__NR_readv, (syscall_fn_t)ksu_hook_readv, &ksu_orig_readv);
+    WRITE_ONCE(ksu_proc_hide_ready, true);
     pr_info("proc_hide: getdents64=%d pread64=%d readv=%d\n", ksu_orig_getdents64 != NULL, ksu_orig_pread64 != NULL,
             ksu_orig_readv != NULL);
 }
 
 void ksu_proc_hide_exit(void)
 {
+    WRITE_ONCE(ksu_proc_hide_ready, false);
     if (ksu_orig_getdents64)
         ksu_syscall_table_unhook(__NR_getdents64);
     ksu_orig_getdents64 = NULL;

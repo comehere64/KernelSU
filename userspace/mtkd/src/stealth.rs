@@ -33,25 +33,24 @@ pub fn stealth_shell() -> (PathBuf, String) {
     let name = pick_name();
     let link = PathBuf::from(crate::defs::BINARY_DIR).join(name);
 
-    // 老版本装的是软链（sh -> kworker）。升级后如果只判断「不存在才建」，
-    // 那条软链会一直留着，/proc/<pid>/exe 仍然指 /system/bin/sh，等于白改。
-    // 所以除了「不存在」，还要把「存在但是软链」也重建成真副本。
-    let needs_rebuild =
-        std::fs::symlink_metadata(&link).map_or(true, |meta| meta.file_type().is_symlink());
+    // 必须是软链，不能是复制出来的副本。
+    //
+    // 148 试过 copy /system/bin/sh 到 /data/adb/ksu/bin/kworker，想让
+    // /proc/<pid>/exe 也看不出是 sh —— 结果脚本全跑不了：
+    //   kworker: /sdcard/xxx.sh: can't execute: Permission denied
+    // /data/adb 下的文件带着 ksu_file 之类的标签，执行域没有它的 execute 权限，
+    // 复制品一 exec 就 EACCES；软链解析到 /system/bin/sh，用的是系统原本的标签
+    // 和 APEX 依赖，怎么都能跑。所以退回软链。
+    //
+    // exe 指向 /system/bin/sh 无所谓：ps/top 看的是 comm 和 cmdline，都不看 exe。
+    let is_symlink = std::fs::symlink_metadata(&link)
+        .is_ok_and(|meta| meta.file_type().is_symlink());
 
-    if needs_rebuild {
+    if !is_symlink {
         let _ = std::fs::create_dir_all(crate::defs::BINARY_DIR);
-        // 软链必须删掉，否则 copy 会写进链接目标（/system/bin/sh 是只读的，直接失败）
+        // 148 留下的副本要先删，否则 symlink() 会因为目标已存在而失败
         let _ = std::fs::remove_file(&link);
-        // 优先复制一份真二进制，而不是软链：
-        //   软链的话 /proc/<pid>/exe -> /system/bin/sh，`ls -l` 一眼就露；
-        //   复制成 BINARY_DIR/kworker 之后 exe 指向 /data/adb/ksu/bin/kworker，
-        //   名字和路径都跟"内核线程"这层皮对得上。
-        let copied = std::fs::copy(crate::defs::SHELL_PATH, &link).is_ok();
-        if copied {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&link, std::fs::Permissions::from_mode(0o755));
-        } else if std::os::unix::fs::symlink(crate::defs::SHELL_PATH, &link).is_err() {
+        if std::os::unix::fs::symlink(crate::defs::SHELL_PATH, &link).is_err() {
             return (PathBuf::from(crate::defs::SHELL_PATH), name.to_string());
         }
     }
